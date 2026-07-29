@@ -1,0 +1,884 @@
+// PRO Tenant Management — Database Design (Phase 2)
+// Prisma schema — PostgreSQL
+//
+// Cross-cutting rules applied throughout this file:
+//   1. Nothing is ever hard-deleted. Every business entity carries `deletedAt`;
+//      the API layer (Phase 5) filters it via a Prisma Client extension rather
+//      than relying on each query to remember. Pure event/log tables
+//      (AuditLog, MaintenanceStatusEvent, ExchangeRate, NotificationDelivery)
+//      are append-only by nature and intentionally have no `deletedAt`.
+//   2. `ownerId` is denormalized onto every apartment-scoped child record
+//      (Lease, RentPayment, UtilityRecord, Document, MaintenanceRequest, Note)
+//      even though it is technically derivable via `apartment.ownerId`. This
+//      is not a shortcut — it (a) lets every row-level scoping check in the
+//      service layer filter with a single indexed column instead of a join,
+//      meeting the <300ms p95 requirement at thousand-apartment scale, and
+//      (b) preserves the owner-of-record on historical financial rows even
+//      in the rare case an apartment's ownership is reassigned later.
+//   3. Money: `rentAmountEUR` is the source of truth (PRD §7). Tenant-facing
+//      RON amounts are never stored as "the" amount — they are snapshotted
+//      per-invoice alongside the exchange rate used, so historical invoices
+//      never drift if the BNR rate is revised retroactively.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =========================================================================
+// AUTH, ROLES & PERMISSIONS  (PRD §3, §3.4, §5)
+// =========================================================================
+
+/// Well-known role keys the API's routing/UI logic switches on.
+/// EMPLOYEE is intentionally NOT a hardcoded key — future employee roles are
+/// custom Role rows (key = null, isSystem = false) assembled from Permission
+/// bundles, per PRD §3.4 ("adding Employee later is a data change").
+enum SystemRoleKey {
+  ADMIN
+  OWNER
+  TENANT
+}
+
+enum AccountStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum Locale {
+  EN
+  RO
+}
+
+model Role {
+  id       String         @id @default(cuid())
+  key      SystemRoleKey? @unique
+  name     String
+  isSystem Boolean        @default(false)
+
+  users           User[]
+  rolePermissions RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Flat permission flags, e.g. "apartments:write", "payments:write",
+/// "maintenance:manage" (PRD §3.4). Checked via a @RequirePermission guard,
+/// never via a hardcoded role string comparison.
+model Permission {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  description String?
+
+  rolePermissions RolePermission[]
+  userPermissions UserPermission[]
+
+  createdAt DateTime @default(now())
+}
+
+/// Default permission bundle granted to every user of a Role.
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+/// Per-user permission grants layered on top of the role bundle, optionally
+/// scoped to one owner's portfolio — the mechanism that makes "an employee
+/// who only handles Client A's buildings" (PRD §3.4) a data change, not code.
+/// A null ownerId means the grant applies across the user's whole role scope.
+model UserPermission {
+  id           String  @id @default(cuid())
+  userId       String
+  permissionId String
+  ownerId      String?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  owner      Owner?     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, permissionId, ownerId])
+  @@index([userId])
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  avatarUrl    String?
+  locale       Locale        @default(EN)
+  status       AccountStatus @default(INVITED)
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  /// Set when role = OWNER. One login per owner company for now (PRD does
+  /// not call for multiple reps per owner) — kept nullable so PM/Tenant
+  /// users don't need it.
+  ownerId String? @unique
+  owner   Owner?  @relation(fields: [ownerId], references: [id])
+
+  /// Set when role = TENANT, once the invited Tenant profile is linked to
+  /// a login (PRD §3.2: the PM invites, the account gets linked to the
+  /// existing Tenant profile rather than creating a duplicate).
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+
+  userPermissions          UserPermission[]
+  refreshTokens            RefreshToken[]
+  pushDeviceTokens         PushDeviceToken[]
+  notifications            Notification[]
+  auditLogEntries          AuditLog[]
+  uploadedDocuments        Document[]               @relation("DocumentUploadedBy")
+  authoredNotes            Note[]
+  reportedMaintenance      MaintenanceRequest[]     @relation("MaintenanceReportedBy")
+  maintenanceComments      MaintenanceComment[]
+  createdProposals         MaintenanceProposal[]    @relation("ProposalCreatedBy")
+  decidedProposals         MaintenanceProposal[]    @relation("ProposalDecidedBy")
+  sentTenantInvites        TenantInvite[]
+  createdLeases            Lease[]                  @relation("LeaseCreatedBy")
+  recordedRentPayments     RentPayment[]            @relation("RentPaymentRecordedBy")
+  recordedUtilityRecords   UtilityRecord[]          @relation("UtilityRecordRecordedBy")
+  maintenanceStatusChanges MaintenanceStatusEvent[] @relation("StatusEventChangedBy")
+
+  /// Bumped to instantly invalidate every outstanding access token for this
+  /// user (e.g. an admin force-disables a compromised account) without
+  /// waiting for the 15-minute access-token TTL to lapse naturally — the
+  /// JwtAuthGuard rejects any token whose embedded tokenVersion is stale
+  /// (Phase 4 §1).
+  tokenVersion Int @default(0)
+
+  lastLoginAt DateTime?
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([deletedAt])
+}
+
+/// Rotation + reuse-detection support for refresh tokens (PRD §5).
+model RefreshToken {
+  id                String    @id @default(cuid())
+  userId            String
+  tokenHash         String    @unique
+  userAgent         String?
+  ipAddress         String?
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  replacedByTokenId String?   @unique
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+}
+
+model PushDeviceToken {
+  id        String         @id @default(cuid())
+  userId    String
+  token     String         @unique
+  platform  DevicePlatform
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// =========================================================================
+// OWNERS & APARTMENTS  (PRD §2, §4.2, §4.3)
+// =========================================================================
+
+model Owner {
+  id          String  @id @default(cuid())
+  companyName String
+  contactName String
+  email       String
+  phone       String?
+  taxId       String?
+  address     String?
+
+  user                User?
+  apartments          Apartment[]
+  userPermissions     UserPermission[]
+  leases              Lease[]
+  rentPayments        RentPayment[]
+  utilityRecords      UtilityRecord[]
+  invoices            Invoice[]
+  documents           Document[]
+  maintenanceRequests MaintenanceRequest[]
+  notes               Note[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([deletedAt])
+}
+
+enum ApartmentStatus {
+  VACANT
+  OCCUPIED
+}
+
+enum FurnishedStatus {
+  UNFURNISHED
+  SEMI_FURNISHED
+  FULLY_FURNISHED
+}
+
+model Apartment {
+  id      String @id @default(cuid())
+  ownerId String
+  owner   Owner  @relation(fields: [ownerId], references: [id])
+
+  name        String
+  addressLine String
+  city        String
+  sector      String?
+  building    String?
+  floor       Int?
+  totalFloors Int?
+  surfaceM2   Decimal?         @db.Decimal(6, 2)
+  rooms       String?
+  furnished   FurnishedStatus?
+  extras      String[]         @default([])
+  status      ApartmentStatus  @default(VACANT)
+
+  /// Denormalized pointer to the active Lease, maintained on lease
+  /// activation/termination — lets the apartments list render tenant/rent
+  /// inline (PRD §4.2 card layout) without a join per row.
+  currentLeaseId String? @unique
+  currentLease   Lease?  @relation("ApartmentCurrentLease", fields: [currentLeaseId], references: [id])
+
+  leases              Lease[]              @relation("ApartmentLeases")
+  rentPayments        RentPayment[]
+  utilityRecords      UtilityRecord[]
+  documents           Document[]
+  maintenanceRequests MaintenanceRequest[]
+  notes               Note[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+// =========================================================================
+// TENANTS & LEASES  (PRD §3.2, §4.4, §4.5)
+// =========================================================================
+
+/// The person, distinct from their login. A Tenant may exist before their
+/// invite is accepted (userId null) and — per PRD §3.2 — a person who signs
+/// a second lease with a different owner gets linked to this same Tenant
+/// record rather than a duplicate.
+model Tenant {
+  id               String  @id @default(cuid())
+  firstName        String
+  lastName         String
+  email            String
+  phone            String?
+  idDocumentNumber String?
+
+  user     User?
+  leases   Lease[]
+  invites  TenantInvite[]
+  invoices Invoice[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([email])
+  @@index([deletedAt])
+}
+
+enum TenantInviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+/// PM-initiated invite tied to one specific lease (PRD §3.2) — tenants never
+/// self-register.
+model TenantInvite {
+  id         String             @id @default(cuid())
+  tenantId   String
+  leaseId    String             @unique
+  email      String
+  token      String             @unique
+  status     TenantInviteStatus @default(PENDING)
+  expiresAt  DateTime
+  acceptedAt DateTime?
+
+  invitedById String
+  invitedBy   User   @relation(fields: [invitedById], references: [id])
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  lease  Lease  @relation(fields: [leaseId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+enum LeaseStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  TERMINATED
+}
+
+enum DepositStatus {
+  HELD
+  PARTIALLY_RETURNED
+  RETURNED
+}
+
+/// One row per lease term. Renewals create a new row linked via
+/// `renewedFromLeaseId` rather than mutating the old one — the PRD requires
+/// "all previous versions retained and browsable, not overwritten" (§4.5),
+/// and this is what makes an apartment's "Tenant History" tab just a query
+/// over its past Lease rows.
+model Lease {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized, see file header
+  tenantId    String
+
+  apartment Apartment @relation("ApartmentLeases", fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+
+  status            LeaseStatus   @default(DRAFT)
+  startDate         DateTime
+  endDate           DateTime
+  rentAmountEUR     Decimal       @db.Decimal(10, 2)
+  depositAmountEUR  Decimal       @db.Decimal(10, 2)
+  depositStatus     DepositStatus @default(HELD)
+  /// Set when status transitions to TERMINATED (Phase 3 §8 terminate endpoint).
+  terminationReason String?
+
+  renewedFromLeaseId String? @unique
+  renewedFromLease   Lease?  @relation("LeaseRenewal", fields: [renewedFromLeaseId], references: [id])
+  renewedIntoLease   Lease?  @relation("LeaseRenewal")
+
+  currentForApartment Apartment? @relation("ApartmentCurrentLease")
+
+  rentPayments   RentPayment[]
+  utilityRecords UtilityRecord[]
+  invoices       Invoice[]
+  documents      Document[]
+  tenantInvite   TenantInvite?
+
+  createdById String
+  createdBy   User      @relation("LeaseCreatedBy", fields: [createdById], references: [id])
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([tenantId])
+  @@index([status])
+  @@index([endDate])
+  @@index([deletedAt])
+}
+
+// =========================================================================
+// RENT PAYMENTS & TENANT INVOICES  (PRD §4.6, §4.14, §7 currency model)
+// =========================================================================
+
+enum PaymentStatus {
+  PAID
+  PARTIALLY_PAID
+  LATE
+  UNPAID
+}
+
+/// The admin-facing EUR ledger — one row per due month per apartment.
+model RentPayment {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized
+  leaseId     String
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+  lease     Lease     @relation(fields: [leaseId], references: [id])
+
+  dueDate              DateTime
+  rentAmountEUR        Decimal       @db.Decimal(10, 2)
+  paidAmountEUR        Decimal       @default(0) @db.Decimal(10, 2)
+  outstandingAmountEUR Decimal       @db.Decimal(10, 2)
+  status               PaymentStatus @default(UNPAID)
+  paidDate             DateTime?
+  notes                String?
+
+  invoice Invoice?
+
+  recordedById String
+  recordedBy   User      @relation("RentPaymentRecordedBy", fields: [recordedById], references: [id])
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([leaseId])
+  @@index([status])
+  @@index([dueDate])
+  @@index([deletedAt])
+}
+
+enum InvoiceStatus {
+  ISSUED
+  PAID
+  OVERDUE
+  VOID
+}
+
+/// The tenant-facing RON document generated from a RentPayment. Per PRD §7,
+/// `exchangeRateRON` and `invoiceDate` are captured once at generation time
+/// and never recalculated, so historical invoices never drift even if the
+/// BNR rate is revised retroactively.
+model Invoice {
+  id            String @id @default(cuid())
+  rentPaymentId String @unique
+  leaseId       String
+  apartmentId   String
+  ownerId       String // denormalized
+  tenantId      String // denormalized, see file header — the tenant portal reads "my invoices" directly off this
+
+  rentPayment RentPayment @relation(fields: [rentPaymentId], references: [id])
+  lease       Lease       @relation(fields: [leaseId], references: [id])
+  owner       Owner       @relation(fields: [ownerId], references: [id])
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+
+  amountEUR       Decimal       @db.Decimal(10, 2)
+  exchangeRateRON Decimal       @db.Decimal(10, 4)
+  invoiceDate     DateTime
+  amountRON       Decimal       @db.Decimal(12, 2)
+  dueDate         DateTime
+  status          InvoiceStatus @default(ISSUED)
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+/// Daily BNR EUR→RON reference rate. One row per calendar date; invoices
+/// snapshot the value at generation time rather than referencing this table
+/// live (PRD §7).
+model ExchangeRate {
+  id      String   @id @default(cuid())
+  date    DateTime @unique @db.Date
+  rateRON Decimal  @db.Decimal(10, 4)
+  source  String   @default("BNR")
+
+  fetchedAt DateTime @default(now())
+}
+
+// =========================================================================
+// UTILITIES  (PRD §4.7)
+// =========================================================================
+
+enum UtilityType {
+  ELECTRICITY
+  GAS
+  COLD_WATER
+  HOT_WATER
+  HEATING
+}
+
+model UtilityRecord {
+  id          String  @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized
+  leaseId     String?
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+  lease     Lease?    @relation(fields: [leaseId], references: [id])
+
+  utilityType      UtilityType
+  periodMonth      DateTime      @db.Date
+  previousReading  Decimal?      @db.Decimal(10, 2)
+  currentReading   Decimal?      @db.Decimal(10, 2)
+  consumption      Decimal?      @db.Decimal(10, 2)
+  invoiceAmountRON Decimal       @db.Decimal(10, 2)
+  invoiceStatus    PaymentStatus @default(UNPAID)
+  paymentStatus    PaymentStatus @default(UNPAID)
+  paymentDate      DateTime?
+
+  recordedById String
+  recordedBy   User      @relation("UtilityRecordRecordedBy", fields: [recordedById], references: [id])
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  documents Document[]
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([utilityType, periodMonth])
+  @@index([deletedAt])
+}
+
+// =========================================================================
+// DOCUMENTS  (PRD §4.5, §4.8, §4.11 global search)
+// =========================================================================
+
+enum DocumentCategory {
+  CONTRACT
+  ID_PASSPORT
+  MOVE_IN_REPORT
+  MOVE_OUT_REPORT
+  ANNEX
+  RENEWAL
+  INVOICE
+  RECEIPT
+  INSURANCE
+  PHOTO
+  VIDEO
+  MAINTENANCE
+  OTHER
+}
+
+/// Attaches to whichever parent is relevant (Apartment/Lease/UtilityRecord/
+/// MaintenanceRequest); at least one FK must be set — enforced in the
+/// service layer, since Prisma cannot express "exactly one of" at the
+/// schema level. Versions chain via `previousVersionId`; nothing is
+/// overwritten in place (PRD §4.5, §4.8).
+model Document {
+  id       String           @id @default(cuid())
+  category DocumentCategory
+
+  ownerId              String? // denormalized, set whenever resolvable, for fast owner-scoped search
+  apartmentId          String?
+  leaseId              String?
+  utilityRecordId      String?
+  maintenanceRequestId String?
+
+  owner              Owner?              @relation(fields: [ownerId], references: [id])
+  apartment          Apartment?          @relation(fields: [apartmentId], references: [id])
+  lease              Lease?              @relation(fields: [leaseId], references: [id])
+  utilityRecord      UtilityRecord?      @relation(fields: [utilityRecordId], references: [id])
+  maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id])
+
+  fileName  String
+  mimeType  String
+  sizeBytes Int
+  s3Key     String @unique
+
+  version           Int       @default(1)
+  previousVersionId String?   @unique
+  previousVersion   Document? @relation("DocumentVersion", fields: [previousVersionId], references: [id])
+  nextVersion       Document? @relation("DocumentVersion")
+
+  uploadedById String
+  uploadedBy   User   @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  // A generated `search_vector tsvector` column + GIN index is added via a
+  // raw-SQL migration (Prisma has no first-class tsvector type) covering
+  // fileName + category, per the Postgres-FTS plan in the architecture doc.
+
+  @@index([ownerId])
+  @@index([apartmentId])
+  @@index([leaseId])
+  @@index([maintenanceRequestId])
+  @@index([category])
+  @@index([deletedAt])
+}
+
+// =========================================================================
+// MAINTENANCE — approval pipeline  (PRD §4.9)
+// =========================================================================
+
+enum MaintenanceStatus {
+  REPORTED
+  TRIAGED
+  PROPOSAL_CREATED
+  PENDING_OWNER_APPROVAL
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model MaintenanceRequest {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+
+  title        String
+  description  String
+  urgent       Boolean           @default(false)
+  status       MaintenanceStatus @default(REPORTED)
+  cancelReason String?
+  completedAt  DateTime?
+
+  reportedById String
+  reportedBy   User   @relation("MaintenanceReportedBy", fields: [reportedById], references: [id])
+
+  proposals    MaintenanceProposal[]
+  comments     MaintenanceComment[]
+  statusEvents MaintenanceStatusEvent[]
+  documents    Document[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+/// Append-only trail of every status transition (PRD §4.9: "every status
+/// change" kept). No deletedAt — a log entry is never removed.
+model MaintenanceStatusEvent {
+  id                   String             @id @default(cuid())
+  maintenanceRequestId String
+  fromStatus           MaintenanceStatus?
+  toStatus             MaintenanceStatus
+  note                 String?
+
+  maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id])
+
+  changedById String
+  changedBy   User     @relation("StatusEventChangedBy", fields: [changedById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([maintenanceRequestId])
+}
+
+enum ProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUPERSEDED
+}
+
+/// Each new quote is a new row (status SUPERSEDED on the old one) rather
+/// than an edit in place — PRD §4.9 requires "every proposal version" kept.
+model MaintenanceProposal {
+  id                   String @id @default(cuid())
+  maintenanceRequestId String
+
+  maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id])
+
+  version        Int
+  contractorName String
+  costEUR        Decimal        @db.Decimal(10, 2)
+  description    String
+  status         ProposalStatus @default(PENDING)
+
+  createdById String
+  createdBy   User      @relation("ProposalCreatedBy", fields: [createdById], references: [id])
+  decidedById String?
+  decidedBy   User?     @relation("ProposalDecidedBy", fields: [decidedById], references: [id])
+  decidedAt   DateTime?
+
+  comments MaintenanceComment[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([maintenanceRequestId])
+  @@index([status])
+}
+
+/// Comment thread on a request/proposal. `visibleToTenant` implements PRD
+/// §4.9's "visible to PM and Owner, not the tenant, unless the PM chooses
+/// to relay" — default false, PM can flip individual comments.
+model MaintenanceComment {
+  id                   String  @id @default(cuid())
+  maintenanceRequestId String
+  proposalId           String?
+  body                 String
+  visibleToTenant      Boolean @default(false)
+
+  maintenanceRequest MaintenanceRequest   @relation(fields: [maintenanceRequestId], references: [id])
+  proposal           MaintenanceProposal? @relation(fields: [proposalId], references: [id])
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([maintenanceRequestId])
+}
+
+// =========================================================================
+// NOTES  (PRD §4.10 — admin-only, never serialized to Owner-facing surfaces)
+// =========================================================================
+
+model Note {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized — the field that lets the API filter these out of every Owner-scoped query by construction
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+
+  body String
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([apartmentId])
+  @@index([deletedAt])
+}
+
+// =========================================================================
+// NOTIFICATIONS  (PRD §4.13)
+// =========================================================================
+
+enum NotificationType {
+  LEASE_EXPIRING
+  DOCUMENT_UPLOADED
+  MAINTENANCE_STATUS_CHANGED
+  MAINTENANCE_COMPLETED
+  INVOICE_OVERDUE
+  RENT_RECEIVED
+  PROPOSAL_PENDING_APPROVAL
+  PROPOSAL_DECIDED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  PUSH
+  SMS
+  WHATSAPP
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Notification {
+  id     String           @id @default(cuid())
+  userId String
+  type   NotificationType
+
+  user User @relation(fields: [userId], references: [id])
+
+  title      String
+  body       String
+  /// Loosely-typed pointer back to the triggering record (e.g. a specific
+  /// Lease for LEASE_EXPIRING, carrying daysUntilExpiry) — kept generic so
+  /// this table isn't rebuilt every time a new trigger is added.
+  entityType String?
+  entityId   String?
+  metadata   Json?
+
+  readAt DateTime?
+
+  deliveries NotificationDelivery[]
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt])
+}
+
+model NotificationDelivery {
+  id             String              @id @default(cuid())
+  notificationId String
+  channel        NotificationChannel
+  status         DeliveryStatus      @default(PENDING)
+  sentAt         DateTime?
+  error          String?
+
+  notification Notification @relation(fields: [notificationId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([notificationId])
+}
+
+// =========================================================================
+// AUDIT LOG  (PRD §5 — "audit log of every write")
+// =========================================================================
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  SOFT_DELETE
+  APPROVE
+  REJECT
+  STATUS_CHANGE
+  LOGIN
+  LOGIN_FAILED
+  INVITE_SENT
+  INVITE_ACCEPTED
+}
+
+/// Written by a single interceptor on every mutating request (Phase 5) —
+/// never edited or deleted, and deliberately outside the soft-delete
+/// convention that applies to business data.
+model AuditLog {
+  id         String      @id @default(cuid())
+  actorId    String?
+  actor      User?       @relation(fields: [actorId], references: [id])
+  action     AuditAction
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}

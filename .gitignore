@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+.expo/
+*.log
+.env
+.env.local
+.env.test
+.DS_Store
+.turbo/
+generated/
+apps/api/keys/
+apps/api/uploads/
+coverage/
+*.tsbuildinfo
+.claude/settings.local.json

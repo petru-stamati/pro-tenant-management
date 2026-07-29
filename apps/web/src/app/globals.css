@@ -1,0 +1,161 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-space-grotesk);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.55);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * Brand tokens lifted directly from the approved mockup
+ * (02-Visual-Preview-PRO-Tenant-Management.html) — green/black/white system,
+ * Space Grotesk for headings, Inter for body, IBM Plex Mono for data.
+ */
+:root {
+  --background: #f6f7f5;
+  --foreground: #14170f;
+  --card: #ffffff;
+  --card-foreground: #14170f;
+  --popover: #ffffff;
+  --popover-foreground: #14170f;
+  --primary: #1c9b47;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f2ef;
+  --secondary-foreground: #14170f;
+  --muted: #eceeea;
+  --muted-foreground: #6b7169;
+  --accent: #e4f5ea;
+  --accent-foreground: #0f5c2a;
+  --destructive: #b23b34;
+  --destructive-foreground: #ffffff;
+  --border: #e4e7e2;
+  --input: #e4e7e2;
+  --ring: #1c9b47;
+  --chart-1: #1c9b47;
+  --chart-2: #c97a2b;
+  --chart-3: #2461a8;
+  --chart-4: #0f5c2a;
+  --chart-5: #b23b34;
+  --radius: 0.875rem;
+  --sidebar: #0a0d0b;
+  --sidebar-foreground: #cfd2cd;
+  --sidebar-primary: #1c9b47;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a1e1b;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a1e1b;
+  --sidebar-ring: #1c9b47;
+
+  /* Semantic status tokens the mockup uses for chips/rent status — not the brand accent, kept distinct. */
+  --status-amber: #c97a2b;
+  --status-amber-soft: #fbf0e3;
+  --status-blue: #2461a8;
+  --status-blue-soft: #e3eefb;
+}
+
+.dark {
+  --background: #0d100e;
+  --foreground: #f2f3f1;
+  --card: #161a17;
+  --card-foreground: #f2f3f1;
+  --popover: #161a17;
+  --popover-foreground: #f2f3f1;
+  --primary: #1c9b47;
+  --primary-foreground: #ffffff;
+  --secondary: #1c211d;
+  --secondary-foreground: #f2f3f1;
+  --muted: #1c211d;
+  --muted-foreground: #9aa096;
+  --accent: #122a1b;
+  --accent-foreground: #4ade80;
+  --destructive: #e0655c;
+  --destructive-foreground: #14170f;
+  --border: #262b26;
+  --input: #262b26;
+  --ring: #1c9b47;
+  --chart-1: #1c9b47;
+  --chart-2: #c97a2b;
+  --chart-3: #2461a8;
+  --chart-4: #4ade80;
+  --chart-5: #e0655c;
+  --sidebar: #0a0d0b;
+  --sidebar-foreground: #cfd2cd;
+  --sidebar-primary: #1c9b47;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a1e1b;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a1e1b;
+  --sidebar-ring: #1c9b47;
+
+  --status-amber: #c97a2b;
+  --status-amber-soft: #2a2013;
+  --status-blue: #5b9bd9;
+  --status-blue-soft: #152433;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading;
+    text-wrap: balance;
+  }
+}
+
+@layer utilities {
+  .font-mono-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
