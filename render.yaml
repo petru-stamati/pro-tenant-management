@@ -9,7 +9,10 @@ services:
     # build step too, which makes a plain `npm install` skip devDependencies —
     # but the build itself needs dev tools (nest, tsc, prisma) to run at all.
     buildCommand: npm install --include=dev && npm run build --workspace=@pro-tenant/db && npm run build --workspace=@pro-tenant/api
-    startCommand: npx prisma migrate deploy --schema packages/db/prisma/schema.prisma && npm run start --workspace=@pro-tenant/api
+    # --config (not --schema): Prisma 7 reads datasource.url from
+    # prisma.config.ts, which is only auto-discovered from its own
+    # directory — pointing at the schema file alone isn't enough.
+    startCommand: npx prisma migrate deploy --config packages/db/prisma.config.ts && npm run start --workspace=@pro-tenant/api
     healthCheckPath: /v1/health
     envVars:
       - key: NODE_ENV
