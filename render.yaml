@@ -25,5 +25,3 @@ services:
         value: "30"
       - key: CORS_ORIGIN
         sync: false
-      - key: COOKIE_DOMAIN
-        sync: false
