@@ -5,7 +5,10 @@ services:
     plan: free
     # Commands run from the monorepo root (no rootDir) — npm workspaces need
     # `npm install` at the root to link @pro-tenant/db correctly.
-    buildCommand: npm install && npm run build --workspace=@pro-tenant/db && npm run build --workspace=@pro-tenant/api
+    # --include=dev: NODE_ENV=production is set below and applies during the
+    # build step too, which makes a plain `npm install` skip devDependencies —
+    # but the build itself needs dev tools (nest, tsc, prisma) to run at all.
+    buildCommand: npm install --include=dev && npm run build --workspace=@pro-tenant/db && npm run build --workspace=@pro-tenant/api
     startCommand: npx prisma migrate deploy --schema packages/db/prisma/schema.prisma && npm run start --workspace=@pro-tenant/api
     healthCheckPath: /v1/health
     envVars:
