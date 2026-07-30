@@ -19,3 +19,12 @@ export function useMyInvoices() {
     queryFn: () => apiFetch<Paginated<InvoiceWithLease>>("/invoices?pageSize=20"),
   });
 }
+
+export function useInvoices(params: { apartmentId?: string } = {}) {
+  const query = new URLSearchParams({ pageSize: "50" });
+  if (params.apartmentId) query.set("apartmentId", params.apartmentId);
+  return useQuery({
+    queryKey: ["invoices", params],
+    queryFn: () => apiFetch<Paginated<InvoiceWithLease>>(`/invoices?${query.toString()}`),
+  });
+}

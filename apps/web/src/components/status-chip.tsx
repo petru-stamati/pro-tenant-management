@@ -26,3 +26,10 @@ export function paymentStatusTone(status: "PAID" | "PARTIALLY_PAID" | "UNPAID" |
   if (status === "PARTIALLY_PAID") return "partial";
   return "unpaid";
 }
+
+export function invoiceStatusTone(status: "ISSUED" | "PAID" | "OVERDUE" | "VOID"): keyof typeof TONES {
+  if (status === "PAID") return "paid";
+  if (status === "OVERDUE") return "unpaid";
+  if (status === "VOID") return "open";
+  return "progress";
+}

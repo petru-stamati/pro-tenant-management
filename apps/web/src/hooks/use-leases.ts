@@ -22,9 +22,10 @@ export function useMyLeases() {
   });
 }
 
-export function useLeases(params: { status?: string } = {}) {
+export function useLeases(params: { status?: string; apartmentId?: string } = {}) {
   const query = new URLSearchParams({ pageSize: "100" });
   if (params.status) query.set("status", params.status);
+  if (params.apartmentId) query.set("apartmentId", params.apartmentId);
   return useQuery({
     queryKey: ["leases", "all", params],
     queryFn: () => apiFetch<Paginated<LeaseWithApartment>>(`/leases?${query.toString()}`),

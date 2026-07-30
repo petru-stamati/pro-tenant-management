@@ -13,11 +13,12 @@ export class InvoicesService {
   ) {}
 
   async list(user: AuthenticatedUser, query: ListInvoicesDto) {
-    const { page, pageSize, status } = query;
+    const { page, pageSize, status, apartmentId } = query;
     const statusFilter = status ? { status: status as never } : {};
+    const apartmentFilter = apartmentId ? { apartmentId } : {};
 
     if (user.roleKey === 'TENANT') {
-      const where = { tenantId: user.tenantId ?? '__none__', ...statusFilter };
+      const where = { tenantId: user.tenantId ?? '__none__', ...statusFilter, ...apartmentFilter };
       const [data, total] = await Promise.all([
         this.prisma.client.invoice.findMany({
           where,
@@ -32,7 +33,7 @@ export class InvoicesService {
 
     const allowedOwnerIds = await this.permissions.resolveAllowedOwnerIds(user);
     const scoped = this.prisma.forOwnerScope(allowedOwnerIds);
-    const where = statusFilter;
+    const where = { ...statusFilter, ...apartmentFilter };
     const [data, total] = await Promise.all([
       scoped.invoice.findMany({
         where,

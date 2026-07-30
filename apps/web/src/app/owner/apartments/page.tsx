@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useApartments } from "@/hooks/use-apartments";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
@@ -31,7 +32,11 @@ export default function OwnerApartmentsPage() {
             <TableBody>
               {apartments.data.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-medium">{a.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/owner/apartments/${a.id}`} className="hover:underline">
+                      {a.name}
+                    </Link>
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {a.city}
                     {a.sector ? `, ${a.sector}` : ""}
