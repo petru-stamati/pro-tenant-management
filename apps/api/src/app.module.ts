@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
@@ -29,6 +30,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    ScheduleModule.forRoot(),
     // Generous API-wide default; /auth/login overrides this with the strict
     // 5-per-15-min limit from Phase 4 §4 via @Throttle on that one handler.
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),

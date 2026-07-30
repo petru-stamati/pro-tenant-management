@@ -4,7 +4,29 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useLatestExchangeRate } from "@/hooks/use-exchange-rate";
 import { cn } from "@/lib/utils";
+
+function ExchangeRateWidget() {
+  const { data: rate, isLoading, isError } = useLatestExchangeRate();
+
+  if (isLoading || isError || !rate) return null;
+
+  return (
+    <div className="rounded-[9px] bg-sidebar-accent/40 px-3 py-2.5">
+      <div className="text-[10px] font-medium tracking-[1px] text-sidebar-foreground/50 uppercase">BNR rate</div>
+      <div className="mt-0.5 flex items-baseline gap-1.5">
+        <span className="font-mono-tabular font-mono text-[15px] font-semibold text-white">
+          {Number(rate.rateRON).toFixed(4)}
+        </span>
+        <span className="text-[11px] text-sidebar-foreground/70">RON/EUR</span>
+      </div>
+      <div className="mt-0.5 text-[10.5px] text-sidebar-foreground/50">
+        {new Date(rate.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
+      </div>
+    </div>
+  );
+}
 
 export interface NavItem {
   label: string;
@@ -94,7 +116,7 @@ export function AppShell({
   const signOut = (
     <button
       onClick={() => logout().then(() => router.push("/login"))}
-      className="mt-auto rounded-[9px] px-3 py-2.5 text-left text-[13px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-white"
+      className="rounded-[9px] px-3 py-2.5 text-left text-[13px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-white"
     >
       Sign out
     </button>
@@ -140,7 +162,10 @@ export function AppShell({
       >
         {brand}
         {nav}
-        {signOut}
+        <div className="mt-auto flex flex-col gap-2">
+          <ExchangeRateWidget />
+          {signOut}
+        </div>
       </aside>
 
       <main className="overflow-auto p-4 sm:p-6 md:p-8">{children}</main>

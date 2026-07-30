@@ -13,9 +13,22 @@ export class ExchangeRatesController {
     return this.exchangeRates.list();
   }
 
+  // Intentionally no @RequirePermission — the rate is shown to every role
+  // (PM/Owner/Tenant) in the sidebar, not gated behind the payments permission.
+  @Get('latest')
+  latest() {
+    return this.exchangeRates.getLatest();
+  }
+
   @Post()
   @RequirePermission('payments:write')
   record(@Body() dto: RecordExchangeRateDto) {
     return this.exchangeRates.record(dto);
+  }
+
+  @Post('fetch-latest')
+  @RequirePermission('payments:write')
+  fetchLatest() {
+    return this.exchangeRates.fetchAndSaveFromBnr();
   }
 }
