@@ -34,6 +34,7 @@ const OWNER_SCOPED_MODELS = new Set([
   'rentPayment',
   'invoice',
   'utilityRecord',
+  'utilityRate',
   'document',
   'maintenanceRequest',
   'note',

@@ -13,6 +13,7 @@ import { ExchangeRatesModule } from './exchange-rates/exchange-rates.module';
 import { RentPaymentsModule } from './rent-payments/rent-payments.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { UtilitiesModule } from './utilities/utilities.module';
+import { UtilityRatesModule } from './utility-rates/utility-rates.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { NotesModule } from './notes/notes.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -41,6 +42,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     RentPaymentsModule,
     InvoicesModule,
     UtilitiesModule,
+    UtilityRatesModule,
     MaintenanceModule,
     NotesModule,
     AnalyticsModule,

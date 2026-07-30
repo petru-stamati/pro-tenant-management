@@ -1,15 +1,27 @@
 "use client";
 
-import { useUtilityRecords } from "@/hooks/use-utility-records";
+import { useState } from "react";
+import { useUtilityRecords, type UtilityRecord } from "@/hooks/use-utility-records";
+import { MeterPicturesDialog } from "@/components/meter-pictures-dialog";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusChip, paymentStatusTone } from "@/components/status-chip";
-import { formatRON } from "@/lib/format";
+import { formatRON, dateFormatter } from "@/lib/format";
+
+const UTILITY_UNIT: Record<string, string> = {
+  ELECTRICITY: "kWh",
+  GAS: "m³",
+  COLD_WATER: "m³",
+  HOT_WATER: "m³",
+  HEATING: "units",
+};
 
 export default function OwnerUtilitiesPage() {
   const { data: records, isLoading } = useUtilityRecords();
+  const [picturesFor, setPicturesFor] = useState<UtilityRecord | null>(null);
 
   return (
-    <div className="mx-auto max-w-[1000px]">
+    <div className="mx-auto max-w-[1100px]">
       <div className="mb-5">
         <h1 className="text-[23px] font-semibold">Utilities</h1>
         <p className="text-[13.5px] text-muted-foreground">{records?.data.length ?? 0} records</p>
@@ -24,9 +36,13 @@ export default function OwnerUtilitiesPage() {
               <TableRow>
                 <TableHead>Apartment</TableHead>
                 <TableHead>Utility</TableHead>
-                <TableHead>Consumption</TableHead>
-                <TableHead>Invoice</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Last month</TableHead>
+                <TableHead>This month</TableHead>
+                <TableHead>Usage</TableHead>
+                <TableHead>Amount</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -34,10 +50,22 @@ export default function OwnerUtilitiesPage() {
                 <TableRow key={r.id}>
                   <TableCell>{r.apartment?.name ?? "—"}</TableCell>
                   <TableCell>{r.utilityType.replace("_", " ")}</TableCell>
-                  <TableCell className="font-mono-tabular font-mono">{r.consumption ?? "—"}</TableCell>
+                  <TableCell className="font-mono-tabular font-mono">
+                    {dateFormatter.format(new Date(r.periodMonth))}
+                  </TableCell>
+                  <TableCell className="font-mono-tabular font-mono">{r.previousReading ?? "—"}</TableCell>
+                  <TableCell className="font-mono-tabular font-mono">{r.currentReading ?? "—"}</TableCell>
+                  <TableCell className="font-mono-tabular font-mono">
+                    {r.consumption ?? "—"} {r.consumption ? UTILITY_UNIT[r.utilityType] : ""}
+                  </TableCell>
                   <TableCell className="font-mono-tabular font-mono">{formatRON(r.invoiceAmountRON)}</TableCell>
                   <TableCell>
                     <StatusChip tone={paymentStatusTone(r.invoiceStatus)}>{r.invoiceStatus.toLowerCase()}</StatusChip>
+                  </TableCell>
+                  <TableCell>
+                    <Button variant="outline" size="sm" onClick={() => setPicturesFor(r)}>
+                      See pictures
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -47,6 +75,8 @@ export default function OwnerUtilitiesPage() {
           <p className="p-5 text-sm text-muted-foreground">No utility records yet.</p>
         )}
       </div>
+
+      {picturesFor && <MeterPicturesDialog record={picturesFor} onClose={() => setPicturesFor(null)} />}
     </div>
   );
 }

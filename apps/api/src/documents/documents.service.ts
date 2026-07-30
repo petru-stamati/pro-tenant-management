@@ -17,11 +17,12 @@ export class DocumentsService {
   ) {}
 
   async list(user: AuthenticatedUser, query: ListDocumentsDto) {
-    const { page, pageSize, apartmentId, leaseId, category } = query;
+    const { page, pageSize, apartmentId, leaseId, category, utilityRecordId } = query;
     const filters = {
       ...(apartmentId ? { apartmentId } : {}),
       ...(leaseId ? { leaseId } : {}),
       ...(category ? { category: category as never } : {}),
+      ...(utilityRecordId ? { utilityRecordId } : {}),
     };
 
     if (user.roleKey === 'TENANT') {
@@ -43,8 +44,8 @@ export class DocumentsService {
   }
 
   async createUploadUrl(dto: CreateUploadUrlDto, uploadedBy: AuthenticatedUser) {
-    if (!dto.apartmentId && !dto.leaseId && !dto.maintenanceRequestId) {
-      throw new BadRequestException('Attach the document to an apartment, lease, or maintenance request');
+    if (!dto.apartmentId && !dto.leaseId && !dto.maintenanceRequestId && !dto.utilityRecordId) {
+      throw new BadRequestException('Attach the document to an apartment, lease, utility record, or maintenance request');
     }
 
     const ownerId = await this.resolveOwnerId(dto);
@@ -57,6 +58,7 @@ export class DocumentsService {
         apartmentId: dto.apartmentId,
         leaseId: dto.leaseId,
         maintenanceRequestId: dto.maintenanceRequestId,
+        utilityRecordId: dto.utilityRecordId,
         fileName: dto.fileName,
         mimeType: dto.mimeType,
         sizeBytes: dto.sizeBytes,
@@ -66,7 +68,7 @@ export class DocumentsService {
     });
 
     // Real S3 would return a presigned PUT URL here instead (Phase 3 §11).
-    return { documentId: document.id, uploadUrl: `/v1/documents/${document.id}/raw-upload`, s3Key };
+    return { documentId: document.id, uploadUrl: `/documents/${document.id}/raw-upload`, s3Key };
   }
 
   async receiveUpload(id: string, buffer: Buffer) {
@@ -85,7 +87,7 @@ export class DocumentsService {
   async findOne(user: AuthenticatedUser, id: string) {
     const document = await this.scopedFind(user, id);
     if (!document) throw new NotFoundException('Document not found');
-    return { ...document, downloadUrl: `/v1/documents/${document.id}/download` };
+    return { ...document, downloadUrl: `/documents/${document.id}/download` };
   }
 
   async downloadBuffer(user: AuthenticatedUser, id: string) {
@@ -116,7 +118,7 @@ export class DocumentsService {
         uploadedById: uploadedBy.id,
       },
     });
-    return { documentId: document.id, uploadUrl: `/v1/documents/${document.id}/raw-upload`, s3Key };
+    return { documentId: document.id, uploadUrl: `/documents/${document.id}/raw-upload`, s3Key };
   }
 
   async remove(id: string) {
@@ -125,7 +127,12 @@ export class DocumentsService {
     return { success: true };
   }
 
-  private async resolveOwnerId(dto: { apartmentId?: string; leaseId?: string; maintenanceRequestId?: string }) {
+  private async resolveOwnerId(dto: {
+    apartmentId?: string;
+    leaseId?: string;
+    maintenanceRequestId?: string;
+    utilityRecordId?: string;
+  }) {
     if (dto.apartmentId) {
       const apartment = await this.prisma.client.apartment.findFirst({ where: { id: dto.apartmentId } });
       if (!apartment) throw new BadRequestException('Apartment not found');
@@ -140,6 +147,11 @@ export class DocumentsService {
       const request = await this.prisma.client.maintenanceRequest.findFirst({ where: { id: dto.maintenanceRequestId } });
       if (!request) throw new BadRequestException('Maintenance request not found');
       return request.ownerId;
+    }
+    if (dto.utilityRecordId) {
+      const record = await this.prisma.client.utilityRecord.findFirst({ where: { id: dto.utilityRecordId } });
+      if (!record) throw new BadRequestException('Utility record not found');
+      return record.ownerId;
     }
     return undefined;
   }

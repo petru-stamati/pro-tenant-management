@@ -23,7 +23,8 @@ export class CreateUtilityRecordDto {
   @IsNumber()
   currentReading?: number;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  invoiceAmountRON!: number;
+  invoiceAmountRON?: number;
 }

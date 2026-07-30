@@ -55,7 +55,9 @@ describe('DocumentsService.createUploadUrl', () => {
     expect(prisma.client.document.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ ownerId: 'owner-1' }) }),
     );
-    expect(result.uploadUrl).toBe(`/v1/documents/${result.documentId}/raw-upload`);
+    // No leading /v1 — the frontend's API_URL already includes it; baking it in
+    // here too caused a real doubled-prefix 404 bug on the actual upload button.
+    expect(result.uploadUrl).toBe(`/documents/${result.documentId}/raw-upload`);
   });
 
   it('rejects an apartmentId that does not exist', async () => {

@@ -227,6 +227,7 @@ model Owner {
   leases              Lease[]
   rentPayments        RentPayment[]
   utilityRecords      UtilityRecord[]
+  utilityRates        UtilityRate[]
   invoices            Invoice[]
   documents           Document[]
   maintenanceRequests MaintenanceRequest[]
@@ -555,6 +556,32 @@ model UtilityRecord {
   @@index([ownerId])
   @@index([utilityType, periodMonth])
   @@index([deletedAt])
+}
+
+/// Per-owner, per-utility pricing used to auto-calculate UtilityRecord.invoiceAmountRON
+/// from a meter reading's consumption. The fields needed differ by type:
+///   ELECTRICITY: consumption * pricePerUnit (already VAT-incl.)
+///   GAS:         consumption * conversionFactor (m3->kWh) * pricePerUnit (VAT-incl.)
+///   COLD/HOT_WATER: consumption * pricePerUnit * (1 + vatPercent/100)
+///                    + maintenanceFee * (1 + maintenanceVatPercent/100)
+/// All editable since utility prices change over time — never hardcoded.
+model UtilityRate {
+  id          String      @id @default(cuid())
+  ownerId     String
+  owner       Owner       @relation(fields: [ownerId], references: [id])
+  utilityType UtilityType
+
+  pricePerUnit          Decimal  @db.Decimal(10, 4)
+  conversionFactor      Decimal? @db.Decimal(10, 4)
+  vatPercent            Decimal? @db.Decimal(5, 2)
+  maintenanceFee        Decimal? @db.Decimal(10, 2)
+  maintenanceVatPercent Decimal? @db.Decimal(5, 2)
+
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([ownerId, utilityType])
 }
 
 // =========================================================================

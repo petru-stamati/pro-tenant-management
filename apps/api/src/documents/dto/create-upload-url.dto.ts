@@ -27,4 +27,8 @@ export class CreateUploadUrlDto {
   @IsOptional()
   @IsString()
   maintenanceRequestId?: string;
+
+  @IsOptional()
+  @IsString()
+  utilityRecordId?: string;
 }

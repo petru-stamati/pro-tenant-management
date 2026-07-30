@@ -29,7 +29,7 @@ export interface CreateUtilityInput {
   periodMonth: string;
   previousReading?: number;
   currentReading?: number;
-  invoiceAmountRON: number;
+  invoiceAmountRON?: number;
 }
 
 export function useCreateUtilityRecord() {

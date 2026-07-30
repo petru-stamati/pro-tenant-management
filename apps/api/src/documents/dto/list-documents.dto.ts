@@ -13,4 +13,8 @@ export class ListDocumentsDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @IsOptional()
+  @IsString()
+  utilityRecordId?: string;
 }
