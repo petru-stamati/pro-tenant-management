@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { useUtilityRecords, useCreateUtilityRecord, type UtilityRecord } from "@/hooks/use-utility-records";
+import {
+  useUtilityRecords,
+  useCreateUtilityRecord,
+  useLastUtilityRecord,
+  TRACKED_UTILITY_TYPES,
+  type UtilityRecord,
+  type TrackedUtilityType,
+} from "@/hooks/use-utility-records";
 import { useApartments } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
 import { useUtilityRates, useUpsertUtilityRate, type UtilityRate } from "@/hooks/use-utility-rates";
@@ -10,211 +17,237 @@ import { MeterPicturesDialog } from "@/components/meter-pictures-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { StatusChip, paymentStatusTone } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
-import { formatRON, dateFormatter } from "@/lib/format";
+import { formatRON } from "@/lib/format";
 
-const UTILITY_TYPES = ["ELECTRICITY", "GAS", "COLD_WATER", "HOT_WATER", "HEATING"];
-
-const UTILITY_UNIT: Record<string, string> = {
-  ELECTRICITY: "kWh",
-  GAS: "m³",
-  COLD_WATER: "m³",
-  HOT_WATER: "m³",
-  HEATING: "units",
+const UTILITY_LABEL: Record<TrackedUtilityType, string> = {
+  ELECTRICITY: "Electricity",
+  GAS: "Gas",
+  COLD_WATER: "Water",
 };
 
+function currentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(month: string) {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
+function shiftMonth(month: string, delta: number) {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export default function UtilitiesPage() {
-  const { data: records, isLoading } = useUtilityRecords();
+  const [month, setMonth] = useState(currentMonth());
+  const { data: apartments, isLoading: apartmentsLoading } = useApartments();
+  const { data: owners } = useOwners();
+  const { data: records, isLoading: recordsLoading } = useUtilityRecords({ month });
+  const [activeCell, setActiveCell] = useState<{ apartmentId: string; apartmentName: string; utilityType: TrackedUtilityType } | null>(null);
   const [picturesFor, setPicturesFor] = useState<UtilityRecord | null>(null);
+
+  const recordLookup = useMemo(() => {
+    const map = new Map<string, UtilityRecord>();
+    records?.data.forEach((r) => map.set(`${r.apartment?.id}:${r.utilityType}`, r));
+    return map;
+  }, [records]);
+
+  const ownerName = (ownerId: string | undefined) => owners?.data.find((o) => o.id === ownerId)?.companyName ?? "—";
+
+  const isLoading = apartmentsLoading || recordsLoading;
 
   return (
     <div className="mx-auto max-w-[1200px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[23px] font-semibold">Utilities</h1>
-          <p className="text-[13.5px] text-muted-foreground">{records?.data.length ?? 0} records</p>
+          <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} apartments</p>
         </div>
-        <div className="flex gap-2">
-          <UtilityRatesDialog />
-          <CreateUtilityDialog />
-        </div>
+        <UtilityRatesDialog />
       </div>
 
-      <div className="rounded-[14px] border border-border bg-card shadow-sm">
-        {isLoading ? (
-          <p className="p-5 text-sm text-muted-foreground">Loading…</p>
-        ) : records && records.data.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Apartment</TableHead>
-                <TableHead>Utility</TableHead>
-                <TableHead>Period</TableHead>
-                <TableHead>Last month</TableHead>
-                <TableHead>This month</TableHead>
-                <TableHead>Usage</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {records.data.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell>{r.apartment?.name ?? "—"}</TableCell>
-                  <TableCell>{r.utilityType.replace("_", " ")}</TableCell>
-                  <TableCell className="font-mono-tabular font-mono">
-                    {dateFormatter.format(new Date(r.periodMonth))}
-                  </TableCell>
-                  <TableCell className="font-mono-tabular font-mono">{r.previousReading ?? "—"}</TableCell>
-                  <TableCell className="font-mono-tabular font-mono">{r.currentReading ?? "—"}</TableCell>
-                  <TableCell className="font-mono-tabular font-mono">
-                    {r.consumption ?? "—"} {r.consumption ? UTILITY_UNIT[r.utilityType] : ""}
-                  </TableCell>
-                  <TableCell className="font-mono-tabular font-mono">{formatRON(r.invoiceAmountRON)}</TableCell>
-                  <TableCell>
-                    <StatusChip tone={paymentStatusTone(r.invoiceStatus)}>{r.invoiceStatus.toLowerCase()}</StatusChip>
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="outline" size="sm" onClick={() => setPicturesFor(r)}>
-                      See pictures
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <p className="p-5 text-sm text-muted-foreground">No utility records yet.</p>
+      <div className="mb-4 flex items-center gap-3">
+        <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
+          ← Prev
+        </Button>
+        <div className="min-w-[160px] text-center text-[15px] font-semibold">{monthLabel(month)}</div>
+        <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
+          Next →
+        </Button>
+        {month !== currentMonth() && (
+          <Button variant="outline" size="sm" onClick={() => setMonth(currentMonth())}>
+            Today
+          </Button>
         )}
       </div>
 
-      {picturesFor && (
-        <MeterPicturesDialog record={picturesFor} onClose={() => setPicturesFor(null)} canUpload />
+      <div className="overflow-x-auto rounded-[14px] border border-border bg-card shadow-sm">
+        {isLoading ? (
+          <p className="p-5 text-sm text-muted-foreground">Loading…</p>
+        ) : apartments && apartments.data.length > 0 ? (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="p-3 font-medium text-muted-foreground">Apartment</th>
+                {TRACKED_UTILITY_TYPES.map((t) => (
+                  <th key={t} className="p-3 font-medium text-muted-foreground">
+                    {UTILITY_LABEL[t]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {apartments.data.map((a) => (
+                <tr key={a.id} className="border-b border-border last:border-0">
+                  <td className="p-3">
+                    <div className="font-medium">{a.name}</div>
+                    <div className="text-[11.5px] text-muted-foreground">{ownerName(a.ownerId)}</div>
+                  </td>
+                  {TRACKED_UTILITY_TYPES.map((t) => {
+                    const record = recordLookup.get(`${a.id}:${t}`);
+                    return (
+                      <td key={t} className="p-3">
+                        {record ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setPicturesFor(record)}
+                              className="rounded-md px-2 py-1 font-mono-tabular font-mono text-[13.5px] hover:bg-accent/60"
+                              title="See pictures"
+                            >
+                              {formatRON(record.invoiceAmountRON)}
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setActiveCell({ apartmentId: a.id, apartmentName: a.name, utilityType: t })}
+                            className="rounded-md border border-dashed border-border px-2.5 py-1 text-[12.5px] text-muted-foreground hover:border-primary hover:text-primary"
+                          >
+                            + Add
+                          </button>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="p-5 text-sm text-muted-foreground">No apartments yet.</p>
+        )}
+      </div>
+
+      {activeCell && (
+        <LogReadingDialog
+          apartmentId={activeCell.apartmentId}
+          apartmentName={activeCell.apartmentName}
+          utilityType={activeCell.utilityType}
+          periodMonth={month}
+          onClose={() => setActiveCell(null)}
+        />
       )}
+
+      {picturesFor && <MeterPicturesDialog record={picturesFor} onClose={() => setPicturesFor(null)} canUpload />}
     </div>
   );
 }
 
-function CreateUtilityDialog() {
-  const [open, setOpen] = useState(false);
-  const { data: apartments } = useApartments();
+function LogReadingDialog({
+  apartmentId,
+  apartmentName,
+  utilityType,
+  periodMonth,
+  onClose,
+}: {
+  apartmentId: string;
+  apartmentName: string;
+  utilityType: TrackedUtilityType;
+  periodMonth: string;
+  onClose: () => void;
+}) {
+  const { data: last, isLoading: lastLoading } = useLastUtilityRecord(apartmentId, utilityType);
   const create = useCreateUtilityRecord();
-  const [form, setForm] = useState({
-    apartmentId: "",
-    utilityType: "",
-    periodMonth: "",
-    previousReading: "",
-    currentReading: "",
-    invoiceAmountRON: "",
-  });
+  const carriedReading = last?.data[0]?.currentReading ?? null;
+  const [manualPrevious, setManualPrevious] = useState("");
+  const [currentReading, setCurrentReading] = useState("");
+  const [invoiceAmountRON, setInvoiceAmountRON] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const previousReading = carriedReading !== null ? Number(carriedReading) : Number(manualPrevious);
     try {
       await create.mutateAsync({
-        apartmentId: form.apartmentId,
-        utilityType: form.utilityType,
-        periodMonth: form.periodMonth,
-        previousReading: form.previousReading ? Number(form.previousReading) : undefined,
-        currentReading: form.currentReading ? Number(form.currentReading) : undefined,
-        invoiceAmountRON: form.invoiceAmountRON ? Number(form.invoiceAmountRON) : undefined,
+        apartmentId,
+        utilityType,
+        periodMonth: `${periodMonth}-01`,
+        previousReading,
+        currentReading: Number(currentReading),
+        invoiceAmountRON: invoiceAmountRON ? Number(invoiceAmountRON) : undefined,
       });
-      toast.success("Utility record logged");
-      setOpen(false);
-      setForm({ apartmentId: "", utilityType: "", periodMonth: "", previousReading: "", currentReading: "", invoiceAmountRON: "" });
+      toast.success("Reading logged");
+      onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button>+ Log reading</Button>} />
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Log utility reading</DialogTitle>
+          <DialogTitle>
+            {apartmentName} — {UTILITY_LABEL[utilityType]}
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label>Apartment</Label>
-            <Select value={form.apartmentId} onValueChange={(v) => setForm((f) => ({ ...f, apartmentId: v ?? "" }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select an apartment" />
-              </SelectTrigger>
-              <SelectContent>
-                {apartments?.data.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Last month&apos;s reading</Label>
+            {lastLoading ? (
+              <p className="text-[13px] text-muted-foreground">Checking…</p>
+            ) : carriedReading !== null ? (
+              <p className="rounded-md bg-accent/40 px-3 py-2 font-mono-tabular font-mono text-[14px]">
+                {carriedReading} <span className="text-[11.5px] text-muted-foreground">(carried forward automatically)</span>
+              </p>
+            ) : (
+              <>
+                <Input
+                  type="number"
+                  required
+                  placeholder="No prior reading on file — enter the starting number"
+                  value={manualPrevious}
+                  onChange={(e) => setManualPrevious(e.target.value)}
+                />
+                <p className="text-[11.5px] text-muted-foreground">
+                  First reading for this apartment/utility — every month after this one will carry forward automatically.
+                </p>
+              </>
+            )}
           </div>
           <div className="flex flex-col gap-2">
-            <Label>Utility</Label>
-            <Select value={form.utilityType} onValueChange={(v) => setForm((f) => ({ ...f, utilityType: v ?? "" }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a utility type" />
-              </SelectTrigger>
-              <SelectContent>
-                {UTILITY_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t.replace("_", " ")}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Period (month)</Label>
-            <Input
-              type="date"
-              required
-              value={form.periodMonth}
-              onChange={(e) => setForm((f) => ({ ...f, periodMonth: e.target.value }))}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <Label>Last month&apos;s reading</Label>
-              <Input
-                type="number"
-                value={form.previousReading}
-                onChange={(e) => setForm((f) => ({ ...f, previousReading: e.target.value }))}
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label>This month&apos;s reading</Label>
-              <Input
-                type="number"
-                value={form.currentReading}
-                onChange={(e) => setForm((f) => ({ ...f, currentReading: e.target.value }))}
-              />
-            </div>
+            <Label>This month&apos;s reading</Label>
+            <Input type="number" required value={currentReading} onChange={(e) => setCurrentReading(e.target.value)} />
           </div>
           <div className="flex flex-col gap-2">
             <Label>Invoice amount (RON) — optional</Label>
             <Input
               type="number"
               placeholder="Leave blank to auto-calculate from your rate settings"
-              value={form.invoiceAmountRON}
-              onChange={(e) => setForm((f) => ({ ...f, invoiceAmountRON: e.target.value }))}
+              value={invoiceAmountRON}
+              onChange={(e) => setInvoiceAmountRON(e.target.value)}
             />
-            <p className="text-[11.5px] text-muted-foreground">
-              With both readings and a configured rate, the amount is calculated automatically.
-            </p>
           </div>
           {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button type="submit" disabled={create.isPending || !form.apartmentId || !form.utilityType}>
+            <Button type="submit" disabled={create.isPending || !currentReading || (carriedReading === null && !manualPrevious)}>
               {create.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
@@ -413,4 +446,3 @@ function WaterRateForm({ ownerId, rate, onSave }: { ownerId: string; rate?: Util
     </div>
   );
 }
-

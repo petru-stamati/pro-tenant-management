@@ -17,12 +17,14 @@ export class UtilitiesService {
   ) {}
 
   async list(user: AuthenticatedUser, query: ListUtilityRecordsDto) {
-    const { page, pageSize, apartmentId, utilityType } = query;
+    const { page, pageSize, apartmentId, utilityType, month } = query;
     const allowedOwnerIds = await this.permissions.resolveAllowedOwnerIds(user);
     const scoped = this.prisma.forOwnerScope(allowedOwnerIds);
+    const monthFilter = month ? monthRange(month) : undefined;
     const where = {
       ...(apartmentId ? { apartmentId } : {}),
       ...(utilityType ? { utilityType: utilityType as never } : {}),
+      ...(monthFilter ? { periodMonth: monthFilter } : {}),
     };
     const [data, total] = await Promise.all([
       scoped.utilityRecord.findMany({
@@ -138,4 +140,10 @@ export class UtilitiesService {
     if (!record) throw new NotFoundException('Utility record not found');
     return record;
   }
+}
+
+/** "YYYY-MM" -> a [gte, lt) range covering that whole calendar month. */
+function monthRange(month: string): { gte: Date; lt: Date } {
+  const [year, m] = month.split('-').map(Number);
+  return { gte: new Date(Date.UTC(year, m - 1, 1)), lt: new Date(Date.UTC(year, m, 1)) };
 }

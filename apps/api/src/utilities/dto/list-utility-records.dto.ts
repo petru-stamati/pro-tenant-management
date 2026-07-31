@@ -9,4 +9,9 @@ export class ListUtilityRecordsDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   utilityType?: string;
+
+  /** "YYYY-MM" — matches any record whose periodMonth falls in that calendar month. */
+  @IsOptional()
+  @IsString()
+  month?: string;
 }
