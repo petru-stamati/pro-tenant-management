@@ -238,8 +238,10 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
   const update = useUpdateLease(lease.id);
   const renew = useRenewLease(lease.id);
   const terminate = useTerminateLease(lease.id);
+  const upload = useUploadDocument();
   const [editForm, setEditForm] = useState({ rentVatIncluded: lease.rentVatIncluded, autoRenewal: lease.autoRenewal });
   const [renewForm, setRenewForm] = useState({ startDate: "", endDate: "", rentAmountEUR: lease.rentAmountEUR });
+  const [renewalFile, setRenewalFile] = useState<File | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -259,12 +261,16 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
     e.preventDefault();
     setError(null);
     try {
-      await renew.mutateAsync({
+      const renewed = await renew.mutateAsync({
         startDate: renewForm.startDate,
         endDate: renewForm.endDate,
         rentAmountEUR: Number(renewForm.rentAmountEUR),
       });
+      if (renewalFile) {
+        await upload.mutateAsync({ file: renewalFile, category: "RENEWAL", leaseId: renewed.id });
+      }
       toast.success("Lease renewed");
+      setRenewalFile(null);
       setMode(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -318,7 +324,13 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={mode === "renew"} onOpenChange={(v) => setMode(v ? "renew" : null)}>
+      <Dialog
+        open={mode === "renew"}
+        onOpenChange={(v) => {
+          setMode(v ? "renew" : null);
+          if (!v) setRenewalFile(null);
+        }}
+      >
         <DialogTrigger render={<Button variant="outline" size="sm" />}>Renew</DialogTrigger>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -354,10 +366,18 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
                 onChange={(e) => setRenewForm((f) => ({ ...f, rentAmountEUR: e.target.value }))}
               />
             </div>
+            <label className="flex cursor-pointer flex-col gap-2">
+              <Label>Signed addendum / extension — optional</Label>
+              <Input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setRenewalFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
             {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
             <DialogFooter>
-              <Button type="submit" disabled={renew.isPending}>
-                {renew.isPending ? "Renewing…" : "Renew lease"}
+              <Button type="submit" disabled={renew.isPending || upload.isPending}>
+                {renew.isPending || upload.isPending ? "Renewing…" : "Renew lease"}
               </Button>
             </DialogFooter>
           </form>
