@@ -12,7 +12,13 @@ services:
     # --config (not --schema): Prisma 7 reads datasource.url from
     # prisma.config.ts, which is only auto-discovered from its own
     # directory — pointing at the schema file alone isn't enough.
-    startCommand: npx prisma migrate deploy --config packages/db/prisma.config.ts && npm run start --workspace=@pro-tenant/api
+    # db:seed re-runs the Role/Permission catalog upsert on every deploy — it's
+    # idempotent (packages/db/prisma/seed.ts) and only touches Role/Permission/
+    # RolePermission rows, never business data. This closes the gap where a
+    # newly-added permission (e.g. tasks:read) would otherwise sit unused in
+    # production until someone remembered to run the seed manually — Shell
+    # access isn't available on the free instance type anyway.
+    startCommand: npx prisma migrate deploy --config packages/db/prisma.config.ts && npm run db:seed --workspace=@pro-tenant/db && npm run start --workspace=@pro-tenant/api
     healthCheckPath: /v1/health
     envVars:
       - key: NODE_ENV
