@@ -15,11 +15,21 @@ export interface DocumentItem {
   apartment?: { id: string; name: string } | null;
 }
 
-export function useDocuments(params: { apartmentId?: string; leaseId?: string; utilityRecordId?: string } = {}) {
+export function useDocuments(
+  params: {
+    apartmentId?: string;
+    leaseId?: string;
+    utilityRecordId?: string;
+    apartmentInvoiceId?: string;
+    paymentConfirmationId?: string;
+  } = {},
+) {
   const query = new URLSearchParams({ pageSize: "50" });
   if (params.apartmentId) query.set("apartmentId", params.apartmentId);
   if (params.leaseId) query.set("leaseId", params.leaseId);
   if (params.utilityRecordId) query.set("utilityRecordId", params.utilityRecordId);
+  if (params.apartmentInvoiceId) query.set("apartmentInvoiceId", params.apartmentInvoiceId);
+  if (params.paymentConfirmationId) query.set("paymentConfirmationId", params.paymentConfirmationId);
   return useQuery({
     queryKey: ["documents", params],
     queryFn: () => apiFetch<Paginated<DocumentItem>>(`/documents?${query.toString()}`),
@@ -32,13 +42,23 @@ export interface UploadDocumentInput {
   apartmentId?: string;
   leaseId?: string;
   utilityRecordId?: string;
+  apartmentInvoiceId?: string;
+  paymentConfirmationId?: string;
 }
 
 /** Runs the full three-step flow (Phase 3 §11): upload-url -> raw PUT -> complete. */
 export function useUploadDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ file, category, apartmentId, leaseId, utilityRecordId }: UploadDocumentInput) => {
+    mutationFn: async ({
+      file,
+      category,
+      apartmentId,
+      leaseId,
+      utilityRecordId,
+      apartmentInvoiceId,
+      paymentConfirmationId,
+    }: UploadDocumentInput) => {
       const { documentId, uploadUrl } = await apiFetch<{ documentId: string; uploadUrl: string }>(
         "/documents/upload-url",
         {
@@ -51,6 +71,8 @@ export function useUploadDocument() {
             apartmentId,
             leaseId,
             utilityRecordId,
+            apartmentInvoiceId,
+            paymentConfirmationId,
           }),
         },
       );

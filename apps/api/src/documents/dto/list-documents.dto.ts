@@ -17,4 +17,12 @@ export class ListDocumentsDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   utilityRecordId?: string;
+
+  @IsOptional()
+  @IsString()
+  apartmentInvoiceId?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentConfirmationId?: string;
 }

@@ -13,6 +13,8 @@ import { LeasesModule } from './leases/leases.module';
 import { ExchangeRatesModule } from './exchange-rates/exchange-rates.module';
 import { RentPaymentsModule } from './rent-payments/rent-payments.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { ApartmentInvoicesModule } from './apartment-invoices/apartment-invoices.module';
+import { PaymentConfirmationsModule } from './payment-confirmations/payment-confirmations.module';
 import { UtilitiesModule } from './utilities/utilities.module';
 import { UtilityRatesModule } from './utility-rates/utility-rates.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
@@ -43,6 +45,8 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     ExchangeRatesModule,
     RentPaymentsModule,
     InvoicesModule,
+    ApartmentInvoicesModule,
+    PaymentConfirmationsModule,
     UtilitiesModule,
     UtilityRatesModule,
     MaintenanceModule,

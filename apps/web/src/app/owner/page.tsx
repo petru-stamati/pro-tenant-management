@@ -7,7 +7,7 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
-import { formatEUR } from "@/lib/format";
+import { formatEUR, formatRON } from "@/lib/format";
 
 export default function OwnerDashboardPage() {
   const { user } = useAuth();
@@ -33,7 +33,7 @@ export default function OwnerDashboardPage() {
             {summaryLoading ? "…" : formatEUR(summary?.monthlyRentalIncomeEUR ?? 0)}
           </div>
           <p className="mt-1.5 text-sm opacity-75">
-            {summary ? `${summary.occupancyRate}% occupancy · ${formatEUR(summary.outstandingRentEUR)} outstanding` : ""}
+            {summary ? `${summary.occupancyRate}% occupancy · ${formatRON(summary.outstandingRON)} outstanding` : ""}
           </p>
         </div>
         {summary?.nextLeaseExpiration && (
@@ -52,10 +52,11 @@ export default function OwnerDashboardPage() {
           delta={summary ? `${summary.occupiedApartments} occupied · ${summary.vacantApartments} vacant` : undefined}
         />
         <KpiCard
-          label="Outstanding Rent"
-          value={summaryLoading ? "…" : formatEUR(summary?.outstandingRentEUR ?? 0)}
+          label="Outstanding"
+          value={summaryLoading ? "…" : formatRON(summary?.outstandingRON ?? 0)}
           deltaTone="down"
         />
+        <KpiCard label="Paid" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
         <KpiCard label="Open Maintenance" value={summaryLoading ? "…" : String(summary?.openMaintenanceCount ?? 0)} />
         <KpiCard label="Occupancy Rate" value={summaryLoading ? "…" : `${summary?.occupancyRate ?? 0}%`} />
       </div>

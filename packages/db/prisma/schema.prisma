@@ -139,22 +139,24 @@ model User {
   tenantId String? @unique
   tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
-  userPermissions          UserPermission[]
-  refreshTokens            RefreshToken[]
-  pushDeviceTokens         PushDeviceToken[]
-  notifications            Notification[]
-  auditLogEntries          AuditLog[]
-  uploadedDocuments        Document[]               @relation("DocumentUploadedBy")
-  authoredNotes            Note[]
-  reportedMaintenance      MaintenanceRequest[]     @relation("MaintenanceReportedBy")
-  maintenanceComments      MaintenanceComment[]
-  createdProposals         MaintenanceProposal[]    @relation("ProposalCreatedBy")
-  decidedProposals         MaintenanceProposal[]    @relation("ProposalDecidedBy")
-  sentTenantInvites        TenantInvite[]
-  createdLeases            Lease[]                  @relation("LeaseCreatedBy")
-  recordedRentPayments     RentPayment[]            @relation("RentPaymentRecordedBy")
-  recordedUtilityRecords   UtilityRecord[]          @relation("UtilityRecordRecordedBy")
-  maintenanceStatusChanges MaintenanceStatusEvent[] @relation("StatusEventChangedBy")
+  userPermissions              UserPermission[]
+  refreshTokens                RefreshToken[]
+  pushDeviceTokens             PushDeviceToken[]
+  notifications                Notification[]
+  auditLogEntries              AuditLog[]
+  uploadedDocuments            Document[]               @relation("DocumentUploadedBy")
+  authoredNotes                Note[]
+  reportedMaintenance          MaintenanceRequest[]     @relation("MaintenanceReportedBy")
+  maintenanceComments          MaintenanceComment[]
+  createdProposals             MaintenanceProposal[]    @relation("ProposalCreatedBy")
+  decidedProposals             MaintenanceProposal[]    @relation("ProposalDecidedBy")
+  sentTenantInvites            TenantInvite[]
+  createdLeases                Lease[]                  @relation("LeaseCreatedBy")
+  recordedRentPayments         RentPayment[]            @relation("RentPaymentRecordedBy")
+  recordedUtilityRecords       UtilityRecord[]          @relation("UtilityRecordRecordedBy")
+  maintenanceStatusChanges     MaintenanceStatusEvent[] @relation("StatusEventChangedBy")
+  uploadedApartmentInvoices    ApartmentInvoice[]       @relation("ApartmentInvoiceUploadedBy")
+  recordedPaymentConfirmations PaymentConfirmation[]    @relation("PaymentConfirmationRecordedBy")
 
   /// Bumped to instantly invalidate every outstanding access token for this
   /// user (e.g. an admin force-disables a compromised account) without
@@ -221,17 +223,19 @@ model Owner {
   taxId       String?
   address     String?
 
-  user                User?
-  apartments          Apartment[]
-  userPermissions     UserPermission[]
-  leases              Lease[]
-  rentPayments        RentPayment[]
-  utilityRecords      UtilityRecord[]
-  utilityRates        UtilityRate[]
-  invoices            Invoice[]
-  documents           Document[]
-  maintenanceRequests MaintenanceRequest[]
-  notes               Note[]
+  user                 User?
+  apartments           Apartment[]
+  userPermissions      UserPermission[]
+  leases               Lease[]
+  rentPayments         RentPayment[]
+  utilityRecords       UtilityRecord[]
+  utilityRates         UtilityRate[]
+  invoices             Invoice[]
+  documents            Document[]
+  maintenanceRequests  MaintenanceRequest[]
+  notes                Note[]
+  apartmentInvoices    ApartmentInvoice[]
+  paymentConfirmations PaymentConfirmation[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -275,12 +279,14 @@ model Apartment {
   currentLeaseId String? @unique
   currentLease   Lease?  @relation("ApartmentCurrentLease", fields: [currentLeaseId], references: [id])
 
-  leases              Lease[]              @relation("ApartmentLeases")
-  rentPayments        RentPayment[]
-  utilityRecords      UtilityRecord[]
-  documents           Document[]
-  maintenanceRequests MaintenanceRequest[]
-  notes               Note[]
+  leases               Lease[]               @relation("ApartmentLeases")
+  rentPayments         RentPayment[]
+  utilityRecords       UtilityRecord[]
+  documents            Document[]
+  maintenanceRequests  MaintenanceRequest[]
+  notes                Note[]
+  apartmentInvoices    ApartmentInvoice[]
+  paymentConfirmations PaymentConfirmation[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -393,11 +399,12 @@ model Lease {
 
   currentForApartment Apartment? @relation("ApartmentCurrentLease")
 
-  rentPayments   RentPayment[]
-  utilityRecords UtilityRecord[]
-  invoices       Invoice[]
-  documents      Document[]
-  tenantInvite   TenantInvite?
+  rentPayments      RentPayment[]
+  utilityRecords    UtilityRecord[]
+  invoices          Invoice[]
+  documents         Document[]
+  tenantInvite      TenantInvite?
+  apartmentInvoices ApartmentInvoice[]
 
   createdById String
   createdBy   User      @relation("LeaseCreatedBy", fields: [createdById], references: [id])
@@ -613,17 +620,21 @@ model Document {
   id       String           @id @default(cuid())
   category DocumentCategory
 
-  ownerId              String? // denormalized, set whenever resolvable, for fast owner-scoped search
-  apartmentId          String?
-  leaseId              String?
-  utilityRecordId      String?
-  maintenanceRequestId String?
+  ownerId               String? // denormalized, set whenever resolvable, for fast owner-scoped search
+  apartmentId           String?
+  leaseId               String?
+  utilityRecordId       String?
+  maintenanceRequestId  String?
+  apartmentInvoiceId    String?
+  paymentConfirmationId String?
 
-  owner              Owner?              @relation(fields: [ownerId], references: [id])
-  apartment          Apartment?          @relation(fields: [apartmentId], references: [id])
-  lease              Lease?              @relation(fields: [leaseId], references: [id])
-  utilityRecord      UtilityRecord?      @relation(fields: [utilityRecordId], references: [id])
-  maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id])
+  owner               Owner?               @relation(fields: [ownerId], references: [id])
+  apartment           Apartment?           @relation(fields: [apartmentId], references: [id])
+  lease               Lease?               @relation(fields: [leaseId], references: [id])
+  utilityRecord       UtilityRecord?       @relation(fields: [utilityRecordId], references: [id])
+  maintenanceRequest  MaintenanceRequest?  @relation(fields: [maintenanceRequestId], references: [id])
+  apartmentInvoice    ApartmentInvoice?    @relation(fields: [apartmentInvoiceId], references: [id])
+  paymentConfirmation PaymentConfirmation? @relation(fields: [paymentConfirmationId], references: [id])
 
   fileName  String
   mimeType  String
@@ -649,8 +660,126 @@ model Document {
   @@index([apartmentId])
   @@index([leaseId])
   @@index([maintenanceRequestId])
+  @@index([apartmentInvoiceId])
+  @@index([paymentConfirmationId])
   @@index([category])
   @@index([deletedAt])
+}
+
+// =========================================================================
+// APARTMENT INVOICES & PAYMENTS — the general (rent/utilities/both) invoice
+// and payment-reconciliation system on the Payments page. Deliberately
+// separate from RentPayment/Invoice above (that pair stays as the
+// EUR->RON auto-generated flow off a rent ledger row); this is the
+// document-driven system where a PM or Owner uploads an actual invoice
+// (or logs one manually), and a single payment confirmation can be split
+// across several invoices, or partially cover just one.
+// =========================================================================
+
+enum ApartmentInvoiceType {
+  RENT
+  UTILITIES
+  RENT_AND_UTILITIES
+}
+
+enum ApartmentInvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+model ApartmentInvoice {
+  id          String  @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized, see file header
+  leaseId     String?
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+  lease     Lease?    @relation(fields: [leaseId], references: [id])
+
+  type          ApartmentInvoiceType
+  invoiceNumber String?
+  issueDate     DateTime             @db.Date
+  dueDate       DateTime             @db.Date
+  /// Which month this invoice belongs to on the Payments page's month view —
+  /// independent of issueDate, same convention as UtilityRecord.periodMonth.
+  periodMonth   DateTime             @db.Date
+
+  totalAmountRON       Decimal                @db.Decimal(10, 2)
+  paidAmountRON        Decimal                @default(0) @db.Decimal(10, 2)
+  outstandingAmountRON Decimal                @db.Decimal(10, 2)
+  status               ApartmentInvoiceStatus @default(UNPAID)
+
+  /// Set when the amount/dates were auto-extracted from the uploaded file
+  /// (future OCR integration) rather than typed in by hand — lets the UI
+  /// flag "please double-check" without a separate audit-log lookup.
+  autoExtracted Boolean @default(false)
+
+  documents Document[]
+
+  uploadedById String
+  uploadedBy   User   @relation("ApartmentInvoiceUploadedBy", fields: [uploadedById], references: [id])
+
+  applications PaymentApplication[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([periodMonth])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+/// One uploaded (or manually logged) payment. May cover one invoice fully,
+/// several invoices at once, or only part of one — see PaymentApplication.
+model PaymentConfirmation {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized, see file header
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+
+  totalAmountRON Decimal  @db.Decimal(10, 2)
+  paymentDate    DateTime @db.Date
+  notes          String?
+
+  documents Document[]
+
+  recordedById String
+  recordedBy   User   @relation("PaymentConfirmationRecordedBy", fields: [recordedById], references: [id])
+
+  applications PaymentApplication[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+/// The join that lets one PaymentConfirmation split across multiple
+/// ApartmentInvoices (or multiple confirmations chip away at one invoice
+/// over time) — each row is "this much of this payment applies to this
+/// invoice". An invoice's paidAmountRON is always the sum of its rows here.
+model PaymentApplication {
+  id                    String  @id @default(cuid())
+  paymentConfirmationId String
+  invoiceId             String
+  amountRON             Decimal @db.Decimal(10, 2)
+
+  paymentConfirmation PaymentConfirmation @relation(fields: [paymentConfirmationId], references: [id])
+  invoice             ApartmentInvoice    @relation(fields: [invoiceId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([paymentConfirmationId])
+  @@index([invoiceId])
 }
 
 // =========================================================================

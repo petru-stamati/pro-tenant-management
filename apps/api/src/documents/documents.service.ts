@@ -17,12 +17,15 @@ export class DocumentsService {
   ) {}
 
   async list(user: AuthenticatedUser, query: ListDocumentsDto) {
-    const { page, pageSize, apartmentId, leaseId, category, utilityRecordId } = query;
+    const { page, pageSize, apartmentId, leaseId, category, utilityRecordId, apartmentInvoiceId, paymentConfirmationId } =
+      query;
     const filters = {
       ...(apartmentId ? { apartmentId } : {}),
       ...(leaseId ? { leaseId } : {}),
       ...(category ? { category: category as never } : {}),
       ...(utilityRecordId ? { utilityRecordId } : {}),
+      ...(apartmentInvoiceId ? { apartmentInvoiceId } : {}),
+      ...(paymentConfirmationId ? { paymentConfirmationId } : {}),
     };
 
     if (user.roleKey === 'TENANT') {
@@ -44,8 +47,17 @@ export class DocumentsService {
   }
 
   async createUploadUrl(dto: CreateUploadUrlDto, uploadedBy: AuthenticatedUser) {
-    if (!dto.apartmentId && !dto.leaseId && !dto.maintenanceRequestId && !dto.utilityRecordId) {
-      throw new BadRequestException('Attach the document to an apartment, lease, utility record, or maintenance request');
+    if (
+      !dto.apartmentId &&
+      !dto.leaseId &&
+      !dto.maintenanceRequestId &&
+      !dto.utilityRecordId &&
+      !dto.apartmentInvoiceId &&
+      !dto.paymentConfirmationId
+    ) {
+      throw new BadRequestException(
+        'Attach the document to an apartment, lease, utility record, invoice, payment confirmation, or maintenance request',
+      );
     }
 
     const ownerId = await this.resolveOwnerId(dto);
@@ -59,6 +71,8 @@ export class DocumentsService {
         leaseId: dto.leaseId,
         maintenanceRequestId: dto.maintenanceRequestId,
         utilityRecordId: dto.utilityRecordId,
+        apartmentInvoiceId: dto.apartmentInvoiceId,
+        paymentConfirmationId: dto.paymentConfirmationId,
         fileName: dto.fileName,
         mimeType: dto.mimeType,
         sizeBytes: dto.sizeBytes,
@@ -132,6 +146,8 @@ export class DocumentsService {
     leaseId?: string;
     maintenanceRequestId?: string;
     utilityRecordId?: string;
+    apartmentInvoiceId?: string;
+    paymentConfirmationId?: string;
   }) {
     if (dto.apartmentId) {
       const apartment = await this.prisma.client.apartment.findFirst({ where: { id: dto.apartmentId } });
@@ -152,6 +168,18 @@ export class DocumentsService {
       const record = await this.prisma.client.utilityRecord.findFirst({ where: { id: dto.utilityRecordId } });
       if (!record) throw new BadRequestException('Utility record not found');
       return record.ownerId;
+    }
+    if (dto.apartmentInvoiceId) {
+      const invoice = await this.prisma.client.apartmentInvoice.findFirst({ where: { id: dto.apartmentInvoiceId } });
+      if (!invoice) throw new BadRequestException('Invoice not found');
+      return invoice.ownerId;
+    }
+    if (dto.paymentConfirmationId) {
+      const confirmation = await this.prisma.client.paymentConfirmation.findFirst({
+        where: { id: dto.paymentConfirmationId },
+      });
+      if (!confirmation) throw new BadRequestException('Payment confirmation not found');
+      return confirmation.ownerId;
     }
     return undefined;
   }

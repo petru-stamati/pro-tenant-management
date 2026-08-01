@@ -20,24 +20,40 @@ export class AnalyticsService {
     const owner = await this.prisma.client.owner.findFirst({ where: { id: ownerId } });
     if (!owner) throw new NotFoundException('Owner not found');
 
-    const [totalApartments, occupiedApartments, activeLeases, outstanding, openMaintenance, nextExpiring] =
-      await Promise.all([
-        this.prisma.client.apartment.count({ where: { ownerId } }),
-        this.prisma.client.apartment.count({ where: { ownerId, status: 'OCCUPIED' } }),
-        this.prisma.client.lease.findMany({ where: { ownerId, status: 'ACTIVE' }, select: { rentAmountEUR: true } }),
-        this.prisma.client.rentPayment.aggregate({
-          where: { ownerId, status: { in: ['UNPAID', 'PARTIALLY_PAID', 'LATE'] } },
-          _sum: { outstandingAmountEUR: true },
-        }),
-        this.prisma.client.maintenanceRequest.count({
-          where: { ownerId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
-        }),
-        this.prisma.client.lease.findFirst({
-          where: { ownerId, status: 'ACTIVE', endDate: { gte: new Date() } },
-          orderBy: { endDate: 'asc' },
-          include: { apartment: true },
-        }),
-      ]);
+    const [
+      totalApartments,
+      occupiedApartments,
+      activeLeases,
+      outstanding,
+      outstandingRON,
+      paidRON,
+      openMaintenance,
+      nextExpiring,
+    ] = await Promise.all([
+      this.prisma.client.apartment.count({ where: { ownerId } }),
+      this.prisma.client.apartment.count({ where: { ownerId, status: 'OCCUPIED' } }),
+      this.prisma.client.lease.findMany({ where: { ownerId, status: 'ACTIVE' }, select: { rentAmountEUR: true } }),
+      this.prisma.client.rentPayment.aggregate({
+        where: { ownerId, status: { in: ['UNPAID', 'PARTIALLY_PAID', 'LATE'] } },
+        _sum: { outstandingAmountEUR: true },
+      }),
+      this.prisma.client.apartmentInvoice.aggregate({
+        where: { ownerId, status: { in: ['UNPAID', 'PARTIALLY_PAID'] } },
+        _sum: { outstandingAmountRON: true },
+      }),
+      this.prisma.client.apartmentInvoice.aggregate({
+        where: { ownerId },
+        _sum: { paidAmountRON: true },
+      }),
+      this.prisma.client.maintenanceRequest.count({
+        where: { ownerId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+      }),
+      this.prisma.client.lease.findFirst({
+        where: { ownerId, status: 'ACTIVE', endDate: { gte: new Date() } },
+        orderBy: { endDate: 'asc' },
+        include: { apartment: true },
+      }),
+    ]);
 
     const monthlyRentalIncomeEUR = activeLeases.reduce((sum, l) => sum + Number(l.rentAmountEUR), 0);
 
@@ -48,6 +64,8 @@ export class AnalyticsService {
       occupancyRate: totalApartments === 0 ? 0 : Math.round((occupiedApartments / totalApartments) * 1000) / 10,
       monthlyRentalIncomeEUR,
       outstandingRentEUR: Number(outstanding._sum.outstandingAmountEUR ?? 0),
+      outstandingRON: Number(outstandingRON._sum.outstandingAmountRON ?? 0),
+      paidRON: Number(paidRON._sum.paidAmountRON ?? 0),
       openMaintenanceCount: openMaintenance,
       nextLeaseExpiration: nextExpiring
         ? {
@@ -62,22 +80,37 @@ export class AnalyticsService {
   async adminSummary(user: AuthenticatedUser) {
     if (user.roleKey !== 'ADMIN') throw new ForbiddenException();
 
-    const [totalApartments, occupiedApartments, activeLeases, outstanding, openMaintenance, revenueByOwner] =
-      await Promise.all([
-        this.prisma.client.apartment.count(),
-        this.prisma.client.apartment.count({ where: { status: 'OCCUPIED' } }),
-        this.prisma.client.lease.findMany({ where: { status: 'ACTIVE' }, select: { rentAmountEUR: true } }),
-        this.prisma.client.rentPayment.aggregate({
-          where: { status: { in: ['UNPAID', 'PARTIALLY_PAID', 'LATE'] } },
-          _sum: { outstandingAmountEUR: true },
-        }),
-        this.prisma.client.maintenanceRequest.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
-        this.prisma.client.lease.groupBy({
-          by: ['ownerId'],
-          where: { status: 'ACTIVE' },
-          _sum: { rentAmountEUR: true },
-        }),
-      ]);
+    const [
+      totalApartments,
+      occupiedApartments,
+      activeLeases,
+      outstanding,
+      outstandingRON,
+      paidRON,
+      openMaintenance,
+      revenueByOwner,
+    ] = await Promise.all([
+      this.prisma.client.apartment.count(),
+      this.prisma.client.apartment.count({ where: { status: 'OCCUPIED' } }),
+      this.prisma.client.lease.findMany({ where: { status: 'ACTIVE' }, select: { rentAmountEUR: true } }),
+      this.prisma.client.rentPayment.aggregate({
+        where: { status: { in: ['UNPAID', 'PARTIALLY_PAID', 'LATE'] } },
+        _sum: { outstandingAmountEUR: true },
+      }),
+      this.prisma.client.apartmentInvoice.aggregate({
+        where: { status: { in: ['UNPAID', 'PARTIALLY_PAID'] } },
+        _sum: { outstandingAmountRON: true },
+      }),
+      this.prisma.client.apartmentInvoice.aggregate({
+        _sum: { paidAmountRON: true },
+      }),
+      this.prisma.client.maintenanceRequest.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
+      this.prisma.client.lease.groupBy({
+        by: ['ownerId'],
+        where: { status: 'ACTIVE' },
+        _sum: { rentAmountEUR: true },
+      }),
+    ]);
 
     const owners = await this.prisma.client.owner.findMany({
       where: { id: { in: revenueByOwner.map((r) => r.ownerId) } },
@@ -92,6 +125,8 @@ export class AnalyticsService {
       occupancyRate: totalApartments === 0 ? 0 : Math.round((occupiedApartments / totalApartments) * 1000) / 10,
       monthlyRevenueEUR: activeLeases.reduce((sum, l) => sum + Number(l.rentAmountEUR), 0),
       outstandingRentEUR: Number(outstanding._sum.outstandingAmountEUR ?? 0),
+      outstandingRON: Number(outstandingRON._sum.outstandingAmountRON ?? 0),
+      paidRON: Number(paidRON._sum.paidAmountRON ?? 0),
       openMaintenanceCount: openMaintenance,
       revenueByOwner: revenueByOwner.map((r) => ({
         ownerId: r.ownerId,

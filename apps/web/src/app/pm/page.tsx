@@ -5,6 +5,7 @@ import { useAdminSummary, useLeaseExpirations } from "@/hooks/use-analytics";
 import { KpiCard } from "@/components/kpi-card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { formatRON } from "@/lib/format";
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -42,11 +43,12 @@ export default function PmDashboardPage() {
           delta={summary ? `${summary.occupiedApartments} of ${summary.totalApartments} occupied` : undefined}
         />
         <KpiCard
-          label="Outstanding Rent"
-          value={summaryLoading ? "…" : `€${(summary?.outstandingRentEUR ?? 0).toLocaleString()}`}
+          label="Outstanding"
+          value={summaryLoading ? "…" : formatRON(summary?.outstandingRON ?? 0)}
           deltaTone="down"
-          delta={summary && summary.outstandingRentEUR > 0 ? "Needs follow-up" : undefined}
+          delta={summary && summary.outstandingRON > 0 ? "Needs follow-up" : undefined}
         />
+        <KpiCard label="Paid" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
         <KpiCard
           label="Open Maintenance"
           value={summaryLoading ? "…" : String(summary?.openMaintenanceCount ?? 0)}
