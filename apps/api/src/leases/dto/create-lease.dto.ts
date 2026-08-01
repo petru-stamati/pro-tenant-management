@@ -28,6 +28,11 @@ export class CreateLeaseDto {
   @Min(1)
   termMonths?: number;
 
+  /** The silent-renewal clause. Defaults to false. */
+  @IsOptional()
+  @IsBoolean()
+  autoRenewal?: boolean;
+
   @IsNumber()
   @Min(0)
   depositAmountEUR!: number;

@@ -10,6 +10,7 @@ export interface LeaseWithApartment {
   rentAmountEUR: string;
   rentVatIncluded: boolean;
   termMonths: number | null;
+  autoRenewal: boolean;
   depositAmountEUR: string;
   depositStatus: "HELD" | "PARTIALLY_RETURNED" | "RETURNED";
   apartmentId: string;
@@ -43,6 +44,7 @@ export interface CreateLeaseInput {
   rentAmountEUR: number;
   rentVatIncluded?: boolean;
   termMonths?: number;
+  autoRenewal?: boolean;
   depositAmountEUR: number;
   status?: "DRAFT" | "ACTIVE";
 }
@@ -56,6 +58,20 @@ export function useCreateLease() {
       queryClient.invalidateQueries({ queryKey: ["leases"] });
       queryClient.invalidateQueries({ queryKey: ["apartments"] });
     },
+  });
+}
+
+export function useUpdateLease(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      rentAmountEUR?: number;
+      rentVatIncluded?: boolean;
+      termMonths?: number;
+      autoRenewal?: boolean;
+      depositAmountEUR?: number;
+    }) => apiFetch<LeaseWithApartment>(`/leases/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leases"] }),
   });
 }
 

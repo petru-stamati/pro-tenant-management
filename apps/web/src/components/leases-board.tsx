@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   useLeases,
   useCreateLease,
+  useUpdateLease,
   useRenewLease,
   useTerminateLease,
   type LeaseWithApartment,
@@ -22,6 +23,7 @@ import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
 import { formatEUR, dateFormatter } from "@/lib/format";
 import { withVat, withoutVat } from "@/lib/vat";
+import { leaseTermStatus } from "@/lib/lease-status";
 
 const STATUS_TONE = { DRAFT: "open", ACTIVE: "paid", ENDED: "progress", TERMINATED: "unpaid" } as const;
 
@@ -130,7 +132,14 @@ export function LeasesBoard({ canManage }: { canManage: boolean }) {
                     </td>
                     <td className="p-3">
                       {lease ? (
-                        <StatusChip tone={STATUS_TONE[lease.status]}>{lease.status.toLowerCase()}</StatusChip>
+                        lease.status === "ACTIVE" ? (
+                          (() => {
+                            const term = leaseTermStatus(lease.endDate, lease.autoRenewal);
+                            return <StatusChip tone={term.tone}>{term.label}</StatusChip>;
+                          })()
+                        ) : (
+                          <StatusChip tone={STATUS_TONE[lease.status]}>{lease.status.toLowerCase()}</StatusChip>
+                        )
                       ) : (
                         <StatusChip tone={apartmentStatusTone("VACANT")}>vacant</StatusChip>
                       )}
@@ -225,12 +234,26 @@ function LeaseDocumentDialog({ lease, onClose }: { lease: LeaseWithApartment; on
 }
 
 function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
-  const [mode, setMode] = useState<"renew" | "terminate" | null>(null);
+  const [mode, setMode] = useState<"edit" | "renew" | "terminate" | null>(null);
+  const update = useUpdateLease(lease.id);
   const renew = useRenewLease(lease.id);
   const terminate = useTerminateLease(lease.id);
+  const [editForm, setEditForm] = useState({ rentVatIncluded: lease.rentVatIncluded, autoRenewal: lease.autoRenewal });
   const [renewForm, setRenewForm] = useState({ startDate: "", endDate: "", rentAmountEUR: lease.rentAmountEUR });
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await update.mutateAsync(editForm);
+      toast.success("Lease updated");
+      setMode(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+    }
+  }
 
   async function handleRenew(e: React.FormEvent) {
     e.preventDefault();
@@ -262,6 +285,39 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
 
   return (
     <div className="flex flex-col gap-1.5">
+      <Dialog open={mode === "edit"} onOpenChange={(v) => setMode(v ? "edit" : null)}>
+        <DialogTrigger render={<Button variant="outline" size="sm" />}>Edit</DialogTrigger>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit lease terms — {lease.apartment.name}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEdit} className="flex flex-col gap-4">
+            <label className="flex items-center gap-1.5 text-[13px]">
+              <input
+                type="checkbox"
+                checked={editForm.rentVatIncluded}
+                onChange={(e) => setEditForm((f) => ({ ...f, rentVatIncluded: e.target.checked }))}
+              />
+              Rent amount is VAT incl.
+            </label>
+            <label className="flex items-center gap-1.5 text-[13px]">
+              <input
+                type="checkbox"
+                checked={editForm.autoRenewal}
+                onChange={(e) => setEditForm((f) => ({ ...f, autoRenewal: e.target.checked }))}
+              />
+              Auto-renewal clause
+            </label>
+            {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+            <DialogFooter>
+              <Button type="submit" disabled={update.isPending}>
+                {update.isPending ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={mode === "renew"} onOpenChange={(v) => setMode(v ? "renew" : null)}>
         <DialogTrigger render={<Button variant="outline" size="sm" />}>Renew</DialogTrigger>
         <DialogContent className="sm:max-w-sm">
@@ -344,6 +400,7 @@ function AddLeaseDialog({ vacantApartments }: { vacantApartments: ApartmentSumma
   const [termMonths, setTermMonths] = useState("12");
   const [rentAmountEUR, setRentAmountEUR] = useState("");
   const [rentVatIncluded, setRentVatIncluded] = useState(true);
+  const [autoRenewal, setAutoRenewal] = useState(false);
   const [depositAmountEUR, setDepositAmountEUR] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -374,6 +431,7 @@ function AddLeaseDialog({ vacantApartments }: { vacantApartments: ApartmentSumma
         rentAmountEUR: Number(rentAmountEUR),
         rentVatIncluded,
         termMonths: termMonths ? Number(termMonths) : undefined,
+        autoRenewal,
         depositAmountEUR: Number(depositAmountEUR),
         status: "ACTIVE",
       });
@@ -391,6 +449,7 @@ function AddLeaseDialog({ vacantApartments }: { vacantApartments: ApartmentSumma
       setTermMonths("12");
       setRentAmountEUR("");
       setRentVatIncluded(true);
+      setAutoRenewal(false);
       setDepositAmountEUR("");
       setFile(null);
     } catch (err) {
@@ -451,6 +510,10 @@ function AddLeaseDialog({ vacantApartments }: { vacantApartments: ApartmentSumma
           <div className="flex flex-col gap-2">
             <Label>Term (months)</Label>
             <Input type="number" min={1} required value={termMonths} onChange={(e) => setTermMonths(e.target.value)} />
+            <label className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+              <input type="checkbox" checked={autoRenewal} onChange={(e) => setAutoRenewal(e.target.checked)} />
+              Auto-renewal clause (renews automatically unless either party gives notice before the end date)
+            </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">

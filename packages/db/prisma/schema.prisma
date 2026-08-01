@@ -403,6 +403,13 @@ model Lease {
   /// dates in the UI, but kept editable/independent since renewals can
   /// have odd terms).
   termMonths        Int?
+  /// The "silent renewal" clause — if neither party gives notice 30/60 days
+  /// before endDate, the lease continues automatically. Purely informational
+  /// today (nothing auto-extends endDate or creates a renewal row); it just
+  /// changes what the term status shows once endDate has passed — "Auto
+  /// renewal" instead of "Expired" — since the PM still has to go decide
+  /// what actually happened and terminate/renew explicitly either way.
+  autoRenewal       Boolean       @default(false)
   depositAmountEUR  Decimal       @db.Decimal(10, 2)
   depositStatus     DepositStatus @default(HELD)
   /// Set when status transitions to TERMINATED (Phase 3 §8 terminate endpoint).
