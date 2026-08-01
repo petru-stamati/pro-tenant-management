@@ -427,6 +427,7 @@ model Lease {
   documents         Document[]
   tenantInvite      TenantInvite?
   apartmentInvoices ApartmentInvoice[]
+  renewalTasks      Task[]
 
   createdById String
   createdBy   User      @relation("LeaseCreatedBy", fields: [createdById], references: [id])
@@ -959,10 +960,14 @@ model Task {
   ownerId     String // denormalized, see file header — always set (every task is about one owner's portfolio), independent of apartmentId
   apartmentId String?
   tenantId    String?
+  /// Set only for system-generated lease-renewal tasks (see TasksService.syncLeaseRenewalTasks) —
+  /// lets the UI offer a "complete = renew this lease" flow and lets renew()/terminate() auto-close it.
+  leaseId     String?
 
   owner     Owner      @relation(fields: [ownerId], references: [id])
   apartment Apartment? @relation(fields: [apartmentId], references: [id])
   tenant    Tenant?    @relation(fields: [tenantId], references: [id])
+  lease     Lease?     @relation(fields: [leaseId], references: [id])
 
   title          String
   description    String
@@ -986,6 +991,7 @@ model Task {
 
   @@index([ownerId])
   @@index([apartmentId])
+  @@index([leaseId])
   @@index([status])
   @@index([deletedAt])
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useTasks,
@@ -12,11 +13,13 @@ import {
   type Task,
   type TaskStatus,
 } from "@/hooks/use-tasks";
+import { useRenewLease } from "@/hooks/use-leases";
 import { useMaintenanceRequests, type MaintenanceRequestSummary, type MaintenanceStatus } from "@/hooks/use-maintenance";
 import { useApartments } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
 import { useAuth } from "@/lib/auth-context";
 import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
+import { ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +28,6 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusChip } from "@/components/status-chip";
-import { ApiError } from "@/lib/api-client";
 import { dateFormatter } from "@/lib/format";
 
 const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
@@ -360,8 +362,23 @@ function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
   );
 }
 
+function addDays(date: Date, days: number): Date {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+function addMonths(date: Date, months: number): Date {
+  const copy = new Date(date);
+  copy.setMonth(copy.getMonth() + months);
+  return copy;
+}
+function toDateInputValue(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose: () => void }) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   // The row click only has the list snapshot (no comments — only the single-task
   // fetch includes those), so this dialog needs its own live fetch to actually
   // show the thread and stay current after a status change or new comment.
@@ -371,15 +388,70 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
   const createComment = useCreateTaskComment(task.id);
   const { data: documents } = useDocuments({ taskId: task.id });
   const upload = useUploadDocument();
+  const renew = useRenewLease(task.leaseId ?? "__none__");
   const [comment, setComment] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [showRenewForm, setShowRenewForm] = useState(false);
+  const [renewForm, setRenewForm] = useState({ startDate: "", endDate: "", rentAmountEUR: "" });
+  const [renewalFile, setRenewalFile] = useState<File | null>(null);
+  const [renewError, setRenewError] = useState<string | null>(null);
+
+  function openRenewForm() {
+    if (task.lease) {
+      const start = addDays(new Date(task.lease.endDate), 1);
+      const end = addMonths(start, task.lease.termMonths ?? 12);
+      setRenewForm({
+        startDate: toDateInputValue(start),
+        endDate: toDateInputValue(end),
+        rentAmountEUR: task.lease.rentAmountEUR,
+      });
+    }
+    setShowRenewForm(true);
+  }
 
   async function handleStatusChange(status: TaskStatus) {
+    // A lease-renewal task's "Completed" IS the renewal — route it through the same
+    // Renew flow the Leases tab uses so the two tabs can never disagree with each other.
+    if (status === "COMPLETED" && task.leaseId) {
+      openRenewForm();
+      return;
+    }
     try {
       await update.mutateAsync({ status });
       toast.success("Status updated");
     } catch {
       toast.error("Could not update status");
+    }
+  }
+
+  async function handleReassign() {
+    try {
+      await update.mutateAsync({ assignedToRole: task.assignedToRole === "ADMIN" ? "OWNER" : "ADMIN" });
+      toast.success(task.assignedToRole === "ADMIN" ? "Sent to Owner" : "Sent to PM");
+    } catch {
+      toast.error("Could not reassign");
+    }
+  }
+
+  async function handleCompleteRenewal(e: React.FormEvent) {
+    e.preventDefault();
+    if (!task.leaseId) return;
+    setRenewError(null);
+    try {
+      const renewed = await renew.mutateAsync({
+        startDate: renewForm.startDate,
+        endDate: renewForm.endDate,
+        rentAmountEUR: Number(renewForm.rentAmountEUR),
+      });
+      if (renewalFile) {
+        await upload.mutateAsync({ file: renewalFile, category: "RENEWAL", leaseId: renewed.id });
+      }
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Lease renewed — task completed");
+      setShowRenewForm(false);
+      setRenewalFile(null);
+    } catch (err) {
+      setRenewError(err instanceof ApiError ? err.message : "Could not renew the lease.");
     }
   }
 
@@ -443,10 +515,17 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Waiting on</span>
-            <span className={waitingOnMe ? "font-semibold text-primary" : undefined}>
-              {task.assignedToRole === "ADMIN" ? "PM" : "Owner"}
-              {waitingOnMe ? " (you)" : ""}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={waitingOnMe ? "font-semibold text-primary" : undefined}>
+                {task.assignedToRole === "ADMIN" ? "PM" : "Owner"}
+                {waitingOnMe ? " (you)" : ""}
+              </span>
+              {task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
+                <Button type="button" size="sm" variant="outline" onClick={handleReassign} disabled={update.isPending}>
+                  {task.assignedToRole === "ADMIN" ? "Send to Owner" : "Send to PM"}
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -463,7 +542,64 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
                 ))}
               </SelectContent>
             </Select>
+            {task.leaseId && task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
+              <p className="text-[11.5px] text-muted-foreground">
+                This is a lease renewal task — marking it Completed will renew the lease.
+              </p>
+            )}
           </div>
+
+          {showRenewForm && (
+            <form onSubmit={handleCompleteRenewal} className="flex flex-col gap-3 rounded-md border border-border bg-accent/20 p-3">
+              <p className="text-[12.5px] font-medium">Complete lease renewal</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label>Start date</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={renewForm.startDate}
+                    onChange={(e) => setRenewForm((f) => ({ ...f, startDate: e.target.value }))}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>End date</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={renewForm.endDate}
+                    onChange={(e) => setRenewForm((f) => ({ ...f, endDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Rent (EUR, VAT incl.)</Label>
+                <Input
+                  type="number"
+                  required
+                  value={renewForm.rentAmountEUR}
+                  onChange={(e) => setRenewForm((f) => ({ ...f, rentAmountEUR: e.target.value }))}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Signed addendum / extension — optional</Label>
+                <Input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setRenewalFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              {renewError && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{renewError}</p>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowRenewForm(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={renew.isPending || upload.isPending}>
+                  {renew.isPending || upload.isPending ? "Renewing…" : "Renew & complete"}
+                </Button>
+              </div>
+            </form>
+          )}
 
           <div className="flex flex-col gap-2 border-t border-border pt-3">
             <Label>Attachments</Label>

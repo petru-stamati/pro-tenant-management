@@ -125,3 +125,119 @@ describe('TasksService.update / createComment', () => {
     expect(prisma.client.task.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'COMPLETED' } });
   });
 });
+
+describe('TasksService.list (auto-generated lease renewal tasks)', () => {
+  function makeScoped(lease: Record<string, unknown> | null, existingTask: Record<string, unknown> | null = null) {
+    return {
+      lease: { findMany: jest.fn().mockResolvedValue(lease ? [lease] : []) },
+      task: {
+        findFirst: jest.fn().mockResolvedValue(existingTask),
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    };
+  }
+
+  function daysFromNow(days: number): Date {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  it('creates a renewal task for an ACTIVE, non-auto-renewing lease expiring within 60 days', async () => {
+    const prisma = makePrisma();
+    const lease = {
+      id: 'lease-1',
+      ownerId: 'owner-1',
+      apartmentId: 'apt-1',
+      tenantId: 'tenant-1',
+      endDate: daysFromNow(30),
+      apartment: { name: 'Ap 003' },
+      tenant: { firstName: 'Nagy', lastName: 'Alexander' },
+    };
+    const scoped = makeScoped(lease);
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new TasksService(prisma as never, makePermissions('all') as never);
+
+    await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
+
+    expect(prisma.client.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ leaseId: 'lease-1', ownerId: 'owner-1', assignedToRole: 'ADMIN', urgent: false }),
+      }),
+    );
+  });
+
+  it('flags the task urgent when the lease has already expired', async () => {
+    const prisma = makePrisma();
+    const lease = {
+      id: 'lease-1',
+      ownerId: 'owner-1',
+      apartmentId: 'apt-1',
+      tenantId: 'tenant-1',
+      endDate: daysFromNow(-5),
+      apartment: { name: 'Ap 003' },
+      tenant: { firstName: 'Nagy', lastName: 'Alexander' },
+    };
+    const scoped = makeScoped(lease);
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new TasksService(prisma as never, makePermissions('all') as never);
+
+    await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
+
+    expect(prisma.client.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ urgent: true }) }),
+    );
+  });
+
+  it('does not create a second task once one already exists for that lease, no matter its status', async () => {
+    const prisma = makePrisma();
+    const lease = {
+      id: 'lease-1',
+      ownerId: 'owner-1',
+      apartmentId: 'apt-1',
+      tenantId: 'tenant-1',
+      endDate: daysFromNow(10),
+      apartment: { name: 'Ap 003' },
+      tenant: { firstName: 'Nagy', lastName: 'Alexander' },
+    };
+    const scoped = makeScoped(lease, { id: 'task-existing', status: 'CANCELLED' });
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new TasksService(prisma as never, makePermissions('all') as never);
+
+    await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
+
+    expect(prisma.client.task.create).not.toHaveBeenCalled();
+  });
+
+  it('does not create a task for a lease that is still more than 60 days from expiry', async () => {
+    const prisma = makePrisma();
+    const lease = {
+      id: 'lease-1',
+      ownerId: 'owner-1',
+      apartmentId: 'apt-1',
+      tenantId: 'tenant-1',
+      endDate: daysFromNow(120),
+      apartment: { name: 'Ap 003' },
+      tenant: { firstName: 'Nagy', lastName: 'Alexander' },
+    };
+    const scoped = makeScoped(lease);
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new TasksService(prisma as never, makePermissions('all') as never);
+
+    await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
+
+    expect(prisma.client.task.create).not.toHaveBeenCalled();
+  });
+
+  it('skips the sync entirely for a TENANT caller', async () => {
+    const prisma = makePrisma();
+    const scoped = makeScoped(null);
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new TasksService(prisma as never, makePermissions([]) as never);
+
+    await service.list(makeUser({ roleKey: 'TENANT', tenantId: 'tenant-1' }), {} as never);
+
+    expect(scoped.lease.findMany).not.toHaveBeenCalled();
+  });
+});

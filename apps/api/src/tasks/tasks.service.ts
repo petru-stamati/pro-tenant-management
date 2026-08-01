@@ -19,6 +19,7 @@ export class TasksService {
   async list(user: AuthenticatedUser, query: ListTasksDto) {
     const { page, pageSize, apartmentId, status } = query;
     const allowedOwnerIds = await this.permissions.resolveAllowedOwnerIds(user);
+    if (user.roleKey !== 'TENANT') await this.syncLeaseRenewalTasks(user, allowedOwnerIds);
     const scoped = this.prisma.forOwnerScope(allowedOwnerIds);
     const where = {
       ...(apartmentId ? { apartmentId } : {}),
@@ -42,10 +43,58 @@ export class TasksService {
       apartment: true,
       tenant: true,
       createdBy: true,
+      lease: true,
       comments: { orderBy: { createdAt: 'asc' }, include: { author: true } },
     });
     if (!task) throw new NotFoundException('Task not found');
     return task;
+  }
+
+  /**
+   * Auto-creates a "Lease renewal" task the first time an ACTIVE, non-auto-renewing
+   * lease enters its expiry window (same 60-day threshold as the Leases tab's "Expires
+   * in N days" label — lib/lease-status.ts on the frontend). One task per lease, ever:
+   * once created it's never duplicated, even if the PM cancels it without renewing —
+   * that's a deliberate decision, tracked by leaving the task CANCELLED, not by pretending
+   * it never happened. renew()/terminate() close it back out automatically.
+   */
+  private async syncLeaseRenewalTasks(user: AuthenticatedUser, allowedOwnerIds: string[] | 'all') {
+    const scoped = this.prisma.forOwnerScope(allowedOwnerIds);
+    const candidates = await scoped.lease.findMany({
+      where: { status: 'ACTIVE', autoRenewal: false },
+      include: { apartment: true, tenant: true },
+    });
+
+    const EXPIRY_WARNING_DAYS = 60;
+    const now = new Date();
+    const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    for (const lease of candidates) {
+      const end = new Date(lease.endDate);
+      const endMidnight = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+      const daysLeft = Math.round((endMidnight.getTime() - nowMidnight.getTime()) / 86_400_000);
+      if (daysLeft > EXPIRY_WARNING_DAYS) continue;
+
+      const existing = await scoped.task.findFirst({ where: { leaseId: lease.id } });
+      if (existing) continue;
+
+      const tenantName = lease.tenant ? `${lease.tenant.firstName} ${lease.tenant.lastName}` : 'the tenant';
+      const whenPhrase = daysLeft < 0 ? `expired on ${end.toISOString().slice(0, 10)}` : `expires on ${end.toISOString().slice(0, 10)}`;
+
+      await this.prisma.client.task.create({
+        data: {
+          ownerId: lease.ownerId,
+          apartmentId: lease.apartmentId,
+          tenantId: lease.tenantId,
+          leaseId: lease.id,
+          title: `Lease renewal — ${lease.apartment.name}`,
+          description: `The lease for ${tenantName} ${whenPhrase}. Upload the signed renewal addendum/extension, send it to the Owner to confirm, then mark this Completed to renew the lease.`,
+          urgent: daysLeft < 0,
+          assignedToRole: 'ADMIN',
+          createdById: user.id,
+        },
+      });
+    }
   }
 
   async create(dto: CreateTaskDto, createdBy: AuthenticatedUser) {

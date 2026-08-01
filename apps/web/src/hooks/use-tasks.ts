@@ -17,6 +17,7 @@ export interface Task {
   ownerId: string;
   apartmentId: string | null;
   tenantId: string | null;
+  leaseId: string | null;
   title: string;
   description: string;
   urgent: boolean;
@@ -27,6 +28,14 @@ export interface Task {
   tenant?: { id: string; firstName: string; lastName: string } | null;
   createdBy?: { id: string; firstName: string; lastName: string; roleId: string };
   comments?: TaskComment[];
+  lease?: {
+    id: string;
+    startDate: string;
+    endDate: string;
+    rentAmountEUR: string;
+    rentVatIncluded: boolean;
+    termMonths: number | null;
+  } | null;
 }
 
 export function useTasks(params: { apartmentId?: string; status?: string } = {}) {
@@ -68,8 +77,13 @@ export function useCreateTask() {
 export function useUpdateTask(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { status?: TaskStatus; title?: string; description?: string; urgent?: boolean }) =>
-      apiFetch<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+    mutationFn: (input: {
+      status?: TaskStatus;
+      title?: string;
+      description?: string;
+      urgent?: boolean;
+      assignedToRole?: AssignedToRole;
+    }) => apiFetch<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["tasks", "detail", id] });

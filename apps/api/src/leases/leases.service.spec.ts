@@ -16,6 +16,9 @@ function makePrisma() {
       update: jest.fn(async (args) => ({ id: args.where.id, ...args.data })),
       findFirst: jest.fn(),
     },
+    task: {
+      updateMany: jest.fn(async () => ({ count: 0 })),
+    },
   };
   return {
     client: {
@@ -112,6 +115,10 @@ describe('LeasesService.renew', () => {
       where: { id: 'apt-1' },
       data: { currentLeaseId: 'lease-new', status: 'OCCUPIED' },
     });
+    expect(prisma.tx.task.updateMany).toHaveBeenCalledWith({
+      where: { leaseId: 'lease-old', status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+      data: { status: 'COMPLETED' },
+    });
   });
 
   it('carries the deposit forward from the old lease rather than resetting it', async () => {
@@ -181,5 +188,19 @@ describe('LeasesService.terminate', () => {
     const result = await service.terminate('lease-1', 'non-payment');
 
     expect(result).toMatchObject({ status: 'TERMINATED', terminationReason: 'non-payment' });
+  });
+
+  it('cancels any pending renewal task tied to the terminated lease', async () => {
+    const prisma = makePrisma();
+    prisma.client.lease.findFirst.mockResolvedValue({ id: 'lease-1', apartmentId: 'apt-1' });
+    prisma.tx.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: 'lease-1' });
+    const service = new LeasesService(prisma as never, makePermissions() as never);
+
+    await service.terminate('lease-1', 'tenant relocating');
+
+    expect(prisma.tx.task.updateMany).toHaveBeenCalledWith({
+      where: { leaseId: 'lease-1', status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+      data: { status: 'CANCELLED' },
+    });
   });
 });

@@ -143,6 +143,12 @@ export class LeasesService {
         where: { id: lease.apartmentId },
         data: { currentLeaseId: renewed.id, status: 'OCCUPIED' },
       });
+      // Auto-close whatever "Lease renewal" task (TasksService.syncLeaseRenewalTasks)
+      // was tracking this lease's expiry — the Leases and Tasks tabs must never disagree.
+      await tx.task.updateMany({
+        where: { leaseId: lease.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+        data: { status: 'COMPLETED' },
+      });
       return renewed;
     });
   }
@@ -163,6 +169,11 @@ export class LeasesService {
           data: { currentLeaseId: null, status: 'VACANT' },
         });
       }
+      // The lease is gone — any pending renewal task for it is moot.
+      await tx.task.updateMany({
+        where: { leaseId: lease.id, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+        data: { status: 'CANCELLED' },
+      });
       return terminated;
     });
   }
