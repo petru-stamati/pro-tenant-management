@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../common/permissions.service';
@@ -61,6 +61,7 @@ export class DocumentsService {
     }
 
     const ownerId = await this.resolveOwnerId(dto);
+    await this.assertOwnerAccess(uploadedBy, ownerId);
     const s3Key = `${dto.category.toLowerCase()}/${randomBytes(8).toString('hex')}-${sanitize(dto.fileName)}`;
 
     const document = await this.prisma.client.document.create({
@@ -85,14 +86,14 @@ export class DocumentsService {
     return { documentId: document.id, uploadUrl: `/documents/${document.id}/raw-upload`, s3Key };
   }
 
-  async receiveUpload(id: string, buffer: Buffer) {
-    const document = await this.assertExists(id);
+  async receiveUpload(user: AuthenticatedUser, id: string, buffer: Buffer) {
+    const document = await this.assertExistsScoped(user, id);
     await this.storage.writeFile(document.s3Key, buffer);
     return this.prisma.client.document.update({ where: { id }, data: { sizeBytes: buffer.length } });
   }
 
-  async complete(id: string) {
-    const document = await this.assertExists(id);
+  async complete(user: AuthenticatedUser, id: string) {
+    const document = await this.assertExistsScoped(user, id);
     const exists = await this.storage.fileExists(document.s3Key);
     if (!exists) throw new BadRequestException('Upload has not finished — file not found in storage yet');
     return document;
@@ -112,8 +113,9 @@ export class DocumentsService {
   }
 
   async newVersion(id: string, dto: CreateUploadUrlDto, uploadedBy: AuthenticatedUser) {
-    const previous = await this.assertExists(id);
+    const previous = await this.assertExistsScoped(uploadedBy, id);
     const ownerId = await this.resolveOwnerId({ ...dto, apartmentId: dto.apartmentId ?? previous.apartmentId ?? undefined });
+    await this.assertOwnerAccess(uploadedBy, ownerId);
     const s3Key = `${previous.category.toLowerCase()}/${randomBytes(8).toString('hex')}-${sanitize(dto.fileName)}`;
 
     const document = await this.prisma.client.document.create({
@@ -135,8 +137,8 @@ export class DocumentsService {
     return { documentId: document.id, uploadUrl: `/documents/${document.id}/raw-upload`, s3Key };
   }
 
-  async remove(id: string) {
-    await this.assertExists(id);
+  async remove(user: AuthenticatedUser, id: string) {
+    await this.assertExistsScoped(user, id);
     await this.prisma.client.document.delete({ where: { id } });
     return { success: true };
   }
@@ -194,8 +196,24 @@ export class DocumentsService {
     return this.prisma.forOwnerScope(allowedOwnerIds).document.findFirst({ where: { id } });
   }
 
-  private async assertExists(id: string) {
-    const document = await this.prisma.client.document.findFirst({ where: { id } });
+  /**
+   * Write-path scoping check: `documents:write` is granted to OWNER too (they
+   * upload their own invoices/lease agreements/etc), so every write must
+   * verify the target's ownerId is actually within the caller's allowed set
+   * — otherwise an Owner could attach/overwrite/delete another owner's
+   * documents by guessing an apartment/lease/invoice id. ADMIN is
+   * unrestricted, matching the read-side scoping everywhere else.
+   */
+  private async assertOwnerAccess(user: AuthenticatedUser, ownerId: string | undefined) {
+    if (!ownerId) return;
+    const allowedOwnerIds = await this.permissions.resolveAllowedOwnerIds(user);
+    if (allowedOwnerIds === 'all') return;
+    if (!allowedOwnerIds.includes(ownerId)) throw new ForbiddenException('Not allowed to write documents for this owner');
+  }
+
+  /** Like `scopedFind`, but 404s instead of returning null — used by the write paths above. */
+  private async assertExistsScoped(user: AuthenticatedUser, id: string) {
+    const document = await this.scopedFind(user, id);
     if (!document) throw new NotFoundException('Document not found');
     return document;
   }

@@ -8,9 +8,12 @@ export interface LeaseWithApartment {
   startDate: string;
   endDate: string;
   rentAmountEUR: string;
+  rentVatIncluded: boolean;
+  termMonths: number | null;
   depositAmountEUR: string;
   depositStatus: "HELD" | "PARTIALLY_RETURNED" | "RETURNED";
-  apartment: { id: string; name: string; addressLine: string; city: string };
+  apartmentId: string;
+  apartment: { id: string; ownerId: string; name: string; addressLine: string; city: string };
   owner?: { id: string; companyName: string };
   tenant?: { id: string; firstName: string; lastName: string };
 }
@@ -38,6 +41,8 @@ export interface CreateLeaseInput {
   startDate: string;
   endDate: string;
   rentAmountEUR: number;
+  rentVatIncluded?: boolean;
+  termMonths?: number;
   depositAmountEUR: number;
   status?: "DRAFT" | "ACTIVE";
 }

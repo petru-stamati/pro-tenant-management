@@ -59,6 +59,20 @@ describe('LeasesService.create', () => {
     });
   });
 
+  it('rejects a new ACTIVE lease for an apartment that already has one', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1', currentLeaseId: 'lease-existing' });
+    const service = new LeasesService(prisma as never, makePermissions() as never);
+
+    await expect(
+      service.create(
+        { apartmentId: 'apt-1', tenantId: 't-1', startDate: '2026-01-01', endDate: '2027-01-01', rentAmountEUR: 500, depositAmountEUR: 500, status: 'ACTIVE' } as never,
+        makeUser({}),
+      ),
+    ).rejects.toThrow('already has an active lease');
+    expect(prisma.client.$transaction).not.toHaveBeenCalled();
+  });
+
   it('leaves the apartment untouched when the lease is created as DRAFT (the default)', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' });

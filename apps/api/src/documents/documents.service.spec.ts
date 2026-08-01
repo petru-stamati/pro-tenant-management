@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 
@@ -92,22 +92,36 @@ describe('DocumentsService.createUploadUrl', () => {
 describe('DocumentsService.complete', () => {
   it('refuses to finalize a document whose file has not actually landed in storage', async () => {
     const prisma = makePrisma();
-    prisma.client.document.findFirst.mockResolvedValue({ id: 'doc-1', s3Key: 'contract/abc-x.pdf' });
+    const scoped = { document: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1', s3Key: 'contract/abc-x.pdf' }) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     const storage = makeStorage();
     storage.fileExists.mockResolvedValue(false);
     const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never);
 
-    await expect(service.complete('doc-1')).rejects.toThrow('Upload has not finished');
+    await expect(service.complete(makeUser({}), 'doc-1')).rejects.toThrow('Upload has not finished');
   });
 
   it('succeeds once the file is confirmed present', async () => {
     const prisma = makePrisma();
-    prisma.client.document.findFirst.mockResolvedValue({ id: 'doc-1', s3Key: 'contract/abc-x.pdf' });
+    const scoped = { document: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1', s3Key: 'contract/abc-x.pdf' }) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     const storage = makeStorage();
     storage.fileExists.mockResolvedValue(true);
     const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never);
 
-    await expect(service.complete('doc-1')).resolves.toMatchObject({ id: 'doc-1' });
+    await expect(service.complete(makeUser({}), 'doc-1')).resolves.toMatchObject({ id: 'doc-1' });
+  });
+
+  it('404s instead of completing when the document is outside the caller owner scope', async () => {
+    const prisma = makePrisma();
+    const scoped = { document: { findFirst: jest.fn().mockResolvedValue(null) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const storage = makeStorage();
+    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, storage as never);
+
+    await expect(
+      service.complete(makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }), 'doc-belonging-to-other-owner'),
+    ).rejects.toThrow(NotFoundException);
   });
 });
 
@@ -156,15 +170,20 @@ describe('DocumentsService tenant vs PM/owner scoping', () => {
 describe('DocumentsService.newVersion', () => {
   it('increments the version number and links previousVersionId, inheriting the parent category/attachment', async () => {
     const prisma = makePrisma();
-    prisma.client.document.findFirst.mockResolvedValue({
-      id: 'doc-1',
-      category: 'CONTRACT',
-      ownerId: 'owner-1',
-      apartmentId: 'apt-1',
-      leaseId: null,
-      maintenanceRequestId: null,
-      version: 2,
-    });
+    const scoped = {
+      document: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'doc-1',
+          category: 'CONTRACT',
+          ownerId: 'owner-1',
+          apartmentId: 'apt-1',
+          leaseId: null,
+          maintenanceRequestId: null,
+          version: 2,
+        }),
+      },
+    };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' });
     const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never);
 
@@ -175,5 +194,46 @@ describe('DocumentsService.newVersion', () => {
         data: expect.objectContaining({ version: 3, previousVersionId: 'doc-1', category: 'CONTRACT' }),
       }),
     );
+  });
+});
+
+describe('DocumentsService write-path owner scoping', () => {
+  it('rejects createUploadUrl when the target apartment belongs to a different owner than the caller', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-2' });
+    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, makeStorage() as never);
+
+    await expect(
+      service.createUploadUrl(
+        { apartmentId: 'apt-1', category: 'CONTRACT', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10 } as never,
+        makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }),
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(prisma.client.document.create).not.toHaveBeenCalled();
+  });
+
+  it('allows an ADMIN to upload against any owner', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-2' });
+    const service = new DocumentsService(prisma as never, makePermissions('all') as never, makeStorage() as never);
+
+    await expect(
+      service.createUploadUrl(
+        { apartmentId: 'apt-1', category: 'CONTRACT', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10 } as never,
+        makeUser({ roleKey: 'ADMIN' }),
+      ),
+    ).resolves.toMatchObject({ documentId: 'doc-1' });
+  });
+
+  it('404s remove() when the document is outside the caller owner scope, instead of deleting it', async () => {
+    const prisma = makePrisma();
+    const scoped = { document: { findFirst: jest.fn().mockResolvedValue(null) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, makeStorage() as never);
+
+    await expect(
+      service.remove(makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }), 'doc-belonging-to-other-owner'),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.client.document.delete).not.toHaveBeenCalled();
   });
 });

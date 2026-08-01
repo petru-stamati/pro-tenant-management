@@ -56,14 +56,18 @@ export class DocumentsController {
   @Post(':id/raw-upload')
   @RequirePermission('documents:write')
   @UseInterceptors(FileInterceptor('file'))
-  receiveUpload(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
-    return this.documents.receiveUpload(id, file.buffer);
+  receiveUpload(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.documents.receiveUpload(user, id, file.buffer);
   }
 
   @Post(':id/complete')
   @RequirePermission('documents:write')
-  complete(@Param('id') id: string) {
-    return this.documents.complete(id);
+  complete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.documents.complete(user, id);
   }
 
   @Post(':id/new-version')
@@ -74,7 +78,7 @@ export class DocumentsController {
 
   @Delete(':id')
   @RequirePermission('documents:write')
-  remove(@Param('id') id: string) {
-    return this.documents.remove(id);
+  remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.documents.remove(user, id);
   }
 }

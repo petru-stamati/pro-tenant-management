@@ -388,6 +388,16 @@ model Lease {
   startDate         DateTime
   endDate           DateTime
   rentAmountEUR     Decimal       @db.Decimal(10, 2)
+  /// Whether `rentAmountEUR` already has VAT folded in — every price in the
+  /// app is VAT-incl. by default (PRD convention) unless explicitly toggled
+  /// off at entry time. The other figure is derived at display time from
+  /// this flag rather than stored twice.
+  rentVatIncluded   Boolean       @default(true)
+  /// Lease length in months, shown alongside start/end date rather than
+  /// only implied by them — set at entry time (usually derived from the
+  /// dates in the UI, but kept editable/independent since renewals can
+  /// have odd terms).
+  termMonths        Int?
   depositAmountEUR  Decimal       @db.Decimal(10, 2)
   depositStatus     DepositStatus @default(HELD)
   /// Set when status transitions to TERMINATED (Phase 3 §8 terminate endpoint).

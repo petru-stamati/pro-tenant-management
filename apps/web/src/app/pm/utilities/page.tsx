@@ -68,7 +68,9 @@ export default function UtilitiesPage() {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-[23px] font-semibold">Utilities</h1>
-          <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} apartments</p>
+          <p className="text-[13.5px] text-muted-foreground">
+            {apartments?.data.length ?? 0} apartments · amounts shown are VAT incl.
+          </p>
         </div>
         <UtilityRatesDialog />
       </div>

@@ -127,7 +127,9 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
                                   {inv.status.replace("_", " ").toLowerCase()}
                                 </StatusChip>
                               </div>
-                              <div className="font-mono-tabular font-mono">{formatRON(inv.totalAmountRON)}</div>
+                              <div className="font-mono-tabular font-mono">
+                                {formatRON(inv.totalAmountRON)} <span className="text-[10px] text-muted-foreground">VAT incl.</span>
+                              </div>
                               <div className="text-[10.5px] text-muted-foreground">
                                 due {dateFormatter.format(new Date(inv.dueDate))}
                               </div>

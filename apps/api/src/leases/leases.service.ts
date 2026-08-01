@@ -72,6 +72,9 @@ export class LeasesService {
   async create(dto: CreateLeaseDto, createdBy: AuthenticatedUser) {
     const apartment = await this.prisma.client.apartment.findFirst({ where: { id: dto.apartmentId } });
     if (!apartment) throw new BadRequestException('Apartment not found');
+    if ((dto.status ?? 'DRAFT') === 'ACTIVE' && apartment.currentLeaseId) {
+      throw new BadRequestException('Apartment already has an active lease — terminate it first');
+    }
 
     return this.prisma.client.$transaction(async (tx) => {
       const lease = await tx.lease.create({
@@ -82,6 +85,8 @@ export class LeasesService {
           startDate: new Date(dto.startDate),
           endDate: new Date(dto.endDate),
           rentAmountEUR: dto.rentAmountEUR,
+          rentVatIncluded: dto.rentVatIncluded ?? true,
+          termMonths: dto.termMonths,
           depositAmountEUR: dto.depositAmountEUR,
           status: dto.status ?? 'DRAFT',
           createdById: createdBy.id,

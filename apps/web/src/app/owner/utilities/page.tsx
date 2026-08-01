@@ -52,7 +52,9 @@ export default function OwnerUtilitiesPage() {
     <div className="mx-auto max-w-[1000px]">
       <div className="mb-5">
         <h1 className="text-[23px] font-semibold">Utilities</h1>
-        <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} apartments</p>
+        <p className="text-[13.5px] text-muted-foreground">
+          {apartments?.data.length ?? 0} apartments · amounts shown are VAT incl.
+        </p>
       </div>
 
       <div className="mb-4 flex items-center gap-3">
