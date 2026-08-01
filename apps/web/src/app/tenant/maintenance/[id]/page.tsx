@@ -11,6 +11,7 @@ const STATUS_LABEL: Record<string, string> = {
   PROPOSAL_CREATED: "Being reviewed",
   PENDING_OWNER_APPROVAL: "Being reviewed",
   IN_PROGRESS: "In progress",
+  REPAIRED: "Repair complete",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };

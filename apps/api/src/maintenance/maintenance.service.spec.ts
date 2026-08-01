@@ -41,7 +41,8 @@ describe('MaintenanceService state machine', () => {
     it.each([
       ['REPORTED', 'TRIAGED'],
       ['TRIAGED', 'PROPOSAL_CREATED'],
-      ['IN_PROGRESS', 'COMPLETED'],
+      ['IN_PROGRESS', 'REPAIRED'],
+      ['REPAIRED', 'COMPLETED'],
     ])('allows the manual transition %s -> %s', async (from, to) => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: from });

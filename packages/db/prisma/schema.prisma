@@ -157,6 +157,8 @@ model User {
   maintenanceStatusChanges     MaintenanceStatusEvent[] @relation("StatusEventChangedBy")
   uploadedApartmentInvoices    ApartmentInvoice[]       @relation("ApartmentInvoiceUploadedBy")
   recordedPaymentConfirmations PaymentConfirmation[]    @relation("PaymentConfirmationRecordedBy")
+  createdTasks                 Task[]                   @relation("TaskCreatedBy")
+  taskComments                 TaskComment[]            @relation("TaskCommentAuthor")
 
   /// Bumped to instantly invalidate every outstanding access token for this
   /// user (e.g. an admin force-disables a compromised account) without
@@ -236,6 +238,7 @@ model Owner {
   notes                Note[]
   apartmentInvoices    ApartmentInvoice[]
   paymentConfirmations PaymentConfirmation[]
+  tasks                Task[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -287,6 +290,7 @@ model Apartment {
   notes                Note[]
   apartmentInvoices    ApartmentInvoice[]
   paymentConfirmations PaymentConfirmation[]
+  tasks                Task[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -317,6 +321,7 @@ model Tenant {
   leases   Lease[]
   invites  TenantInvite[]
   invoices Invoice[]
+  tasks    Task[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -637,6 +642,7 @@ model Document {
   maintenanceRequestId  String?
   apartmentInvoiceId    String?
   paymentConfirmationId String?
+  taskId                String?
 
   owner               Owner?               @relation(fields: [ownerId], references: [id])
   apartment           Apartment?           @relation(fields: [apartmentId], references: [id])
@@ -645,6 +651,7 @@ model Document {
   maintenanceRequest  MaintenanceRequest?  @relation(fields: [maintenanceRequestId], references: [id])
   apartmentInvoice    ApartmentInvoice?    @relation(fields: [apartmentInvoiceId], references: [id])
   paymentConfirmation PaymentConfirmation? @relation(fields: [paymentConfirmationId], references: [id])
+  task                Task?                @relation(fields: [taskId], references: [id])
 
   fileName  String
   mimeType  String
@@ -672,6 +679,7 @@ model Document {
   @@index([maintenanceRequestId])
   @@index([apartmentInvoiceId])
   @@index([paymentConfirmationId])
+  @@index([taskId])
   @@index([category])
   @@index([deletedAt])
 }
@@ -802,6 +810,10 @@ enum MaintenanceStatus {
   PROPOSAL_CREATED
   PENDING_OWNER_APPROVAL
   IN_PROGRESS
+  /// Work physically done, not yet formally closed out — distinct from
+  /// COMPLETED so a PM can flag "fixed" without losing the ability to
+  /// attach final proof/invoice documents before closing the request.
+  REPAIRED
   COMPLETED
   CANCELLED
 }
@@ -914,6 +926,76 @@ model MaintenanceComment {
   createdAt DateTime  @default(now())
 
   @@index([maintenanceRequestId])
+}
+
+// =========================================================================
+// TASKS — the PM<->Owner inbox. Deliberately separate from
+// MaintenanceRequest above: maintenance is the "costs money, needs a
+// quote + approval" pipeline (report -> inspect -> propose -> approve/
+// reject -> repair -> complete), while Task is the lightweight everything
+// -else lane — an Owner delegating an instruction to the PM, or the PM
+// asking the Owner a question/for a decision that isn't a repair quote.
+// The Tasks tab in the UI is a unified inbox that merges rows from both
+// tables rather than one system trying to model both shapes.
+// =========================================================================
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  ANSWERED
+  COMPLETED
+  CANCELLED
+}
+
+model Task {
+  id          String  @id @default(cuid())
+  ownerId     String // denormalized, see file header — always set (every task is about one owner's portfolio), independent of apartmentId
+  apartmentId String?
+  tenantId    String?
+
+  owner     Owner      @relation(fields: [ownerId], references: [id])
+  apartment Apartment? @relation(fields: [apartmentId], references: [id])
+  tenant    Tenant?    @relation(fields: [tenantId], references: [id])
+
+  title          String
+  description    String
+  urgent         Boolean       @default(false)
+  status         TaskStatus    @default(OPEN)
+  /// Whose turn it is to act — the Owner needs to answer/decide something,
+  /// or the PM (ADMIN) has something to do for the Owner. Deliberately a
+  /// role rather than a specific user: there's one Owner login per company
+  /// and PM staff share the inbox (Phase 4 §3.4 employee-role design).
+  assignedToRole SystemRoleKey
+
+  comments  TaskComment[]
+  documents Document[]
+
+  createdById String
+  createdBy   User   @relation("TaskCreatedBy", fields: [createdById], references: [id])
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([ownerId])
+  @@index([apartmentId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model TaskComment {
+  id     String @id @default(cuid())
+  taskId String
+  body   String
+
+  task Task @relation(fields: [taskId], references: [id])
+
+  authorId String
+  author   User   @relation("TaskCommentAuthor", fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
 }
 
 // =========================================================================

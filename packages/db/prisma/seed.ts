@@ -37,6 +37,8 @@ const PERMISSIONS: Record<string, string> = {
   'maintenance:manage': 'Triage, create proposals, change status',
   'maintenance:approve': 'Approve/reject a repair proposal',
   'maintenance:comment': 'Comment on requests/proposals',
+  'tasks:read': 'View the Tasks inbox',
+  'tasks:write': 'Create tasks, comment, change status, upload attachments',
   'notes:read': 'View internal notes',
   'notes:write': 'Create internal notes',
   'analytics:read': 'Own-portfolio KPIs',
@@ -58,6 +60,8 @@ const OWNER_BUNDLE = [
   'maintenance:read',
   'maintenance:approve',
   'maintenance:comment',
+  'tasks:read',
+  'tasks:write',
   'analytics:read',
 ];
 

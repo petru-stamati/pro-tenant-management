@@ -17,10 +17,11 @@ import { dateFormatter } from "@/lib/format";
 
 const STATUS_LABEL: Record<string, string> = {
   REPORTED: "Reported",
-  TRIAGED: "Triaged",
-  PROPOSAL_CREATED: "Proposal created",
+  TRIAGED: "Inspected",
+  PROPOSAL_CREATED: "Quote proposed",
   PENDING_OWNER_APPROVAL: "Pending approval",
   IN_PROGRESS: "In progress",
+  REPAIRED: "Repaired",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -31,6 +32,7 @@ const STATUS_TONE: Record<string, "open" | "progress" | "done" | "unpaid"> = {
   PROPOSAL_CREATED: "progress",
   PENDING_OWNER_APPROVAL: "progress",
   IN_PROGRESS: "progress",
+  REPAIRED: "progress",
   COMPLETED: "done",
   CANCELLED: "unpaid",
 };

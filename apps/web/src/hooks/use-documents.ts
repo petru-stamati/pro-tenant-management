@@ -22,6 +22,7 @@ export function useDocuments(
     utilityRecordId?: string;
     apartmentInvoiceId?: string;
     paymentConfirmationId?: string;
+    taskId?: string;
   } = {},
 ) {
   const query = new URLSearchParams({ pageSize: "50" });
@@ -30,6 +31,7 @@ export function useDocuments(
   if (params.utilityRecordId) query.set("utilityRecordId", params.utilityRecordId);
   if (params.apartmentInvoiceId) query.set("apartmentInvoiceId", params.apartmentInvoiceId);
   if (params.paymentConfirmationId) query.set("paymentConfirmationId", params.paymentConfirmationId);
+  if (params.taskId) query.set("taskId", params.taskId);
   return useQuery({
     queryKey: ["documents", params],
     queryFn: () => apiFetch<Paginated<DocumentItem>>(`/documents?${query.toString()}`),
@@ -44,6 +46,7 @@ export interface UploadDocumentInput {
   utilityRecordId?: string;
   apartmentInvoiceId?: string;
   paymentConfirmationId?: string;
+  taskId?: string;
 }
 
 /** Runs the full three-step flow (Phase 3 §11): upload-url -> raw PUT -> complete. */
@@ -58,6 +61,7 @@ export function useUploadDocument() {
       utilityRecordId,
       apartmentInvoiceId,
       paymentConfirmationId,
+      taskId,
     }: UploadDocumentInput) => {
       const { documentId, uploadUrl } = await apiFetch<{ documentId: string; uploadUrl: string }>(
         "/documents/upload-url",
@@ -73,6 +77,7 @@ export function useUploadDocument() {
             utilityRecordId,
             apartmentInvoiceId,
             paymentConfirmationId,
+            taskId,
           }),
         },
       );

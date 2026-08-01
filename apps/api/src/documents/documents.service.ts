@@ -17,8 +17,17 @@ export class DocumentsService {
   ) {}
 
   async list(user: AuthenticatedUser, query: ListDocumentsDto) {
-    const { page, pageSize, apartmentId, leaseId, category, utilityRecordId, apartmentInvoiceId, paymentConfirmationId } =
-      query;
+    const {
+      page,
+      pageSize,
+      apartmentId,
+      leaseId,
+      category,
+      utilityRecordId,
+      apartmentInvoiceId,
+      paymentConfirmationId,
+      taskId,
+    } = query;
     const filters = {
       ...(apartmentId ? { apartmentId } : {}),
       ...(leaseId ? { leaseId } : {}),
@@ -26,6 +35,7 @@ export class DocumentsService {
       ...(utilityRecordId ? { utilityRecordId } : {}),
       ...(apartmentInvoiceId ? { apartmentInvoiceId } : {}),
       ...(paymentConfirmationId ? { paymentConfirmationId } : {}),
+      ...(taskId ? { taskId } : {}),
     };
 
     if (user.roleKey === 'TENANT') {
@@ -53,10 +63,11 @@ export class DocumentsService {
       !dto.maintenanceRequestId &&
       !dto.utilityRecordId &&
       !dto.apartmentInvoiceId &&
-      !dto.paymentConfirmationId
+      !dto.paymentConfirmationId &&
+      !dto.taskId
     ) {
       throw new BadRequestException(
-        'Attach the document to an apartment, lease, utility record, invoice, payment confirmation, or maintenance request',
+        'Attach the document to an apartment, lease, utility record, invoice, payment confirmation, task, or maintenance request',
       );
     }
 
@@ -74,6 +85,7 @@ export class DocumentsService {
         utilityRecordId: dto.utilityRecordId,
         apartmentInvoiceId: dto.apartmentInvoiceId,
         paymentConfirmationId: dto.paymentConfirmationId,
+        taskId: dto.taskId,
         fileName: dto.fileName,
         mimeType: dto.mimeType,
         sizeBytes: dto.sizeBytes,
@@ -150,6 +162,7 @@ export class DocumentsService {
     utilityRecordId?: string;
     apartmentInvoiceId?: string;
     paymentConfirmationId?: string;
+    taskId?: string;
   }) {
     if (dto.apartmentId) {
       const apartment = await this.prisma.client.apartment.findFirst({ where: { id: dto.apartmentId } });
@@ -182,6 +195,11 @@ export class DocumentsService {
       });
       if (!confirmation) throw new BadRequestException('Payment confirmation not found');
       return confirmation.ownerId;
+    }
+    if (dto.taskId) {
+      const task = await this.prisma.client.task.findFirst({ where: { id: dto.taskId } });
+      if (!task) throw new BadRequestException('Task not found');
+      return task.ownerId;
     }
     return undefined;
   }

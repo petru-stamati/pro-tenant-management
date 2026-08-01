@@ -8,6 +8,7 @@ export type MaintenanceStatus =
   | "PROPOSAL_CREATED"
   | "PENDING_OWNER_APPROVAL"
   | "IN_PROGRESS"
+  | "REPAIRED"
   | "COMPLETED"
   | "CANCELLED";
 
@@ -18,7 +19,7 @@ export interface MaintenanceRequestSummary {
   urgent: boolean;
   status: MaintenanceStatus;
   createdAt: string;
-  apartment?: { id: string; name: string };
+  apartment?: { id: string; ownerId: string; name: string };
 }
 
 export interface MaintenanceProposal {
@@ -40,7 +41,7 @@ export interface MaintenanceStatusEvent {
 }
 
 export interface MaintenanceRequestDetail extends MaintenanceRequestSummary {
-  apartment: { id: string; name: string };
+  apartment: { id: string; ownerId: string; name: string };
   cancelReason: string | null;
   proposals?: MaintenanceProposal[];
   statusEvents?: MaintenanceStatusEvent[];

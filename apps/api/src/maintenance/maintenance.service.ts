@@ -21,7 +21,8 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 const MANUAL_TRANSITIONS: Partial<Record<MaintenanceStatus, MaintenanceStatus[]>> = {
   REPORTED: ['TRIAGED'],
   TRIAGED: ['PROPOSAL_CREATED'],
-  IN_PROGRESS: ['COMPLETED'],
+  IN_PROGRESS: ['REPAIRED'],
+  REPAIRED: ['COMPLETED'],
 };
 
 const CANCELLABLE_FROM: MaintenanceStatus[] = [
@@ -30,6 +31,7 @@ const CANCELLABLE_FROM: MaintenanceStatus[] = [
   'PROPOSAL_CREATED',
   'PENDING_OWNER_APPROVAL',
   'IN_PROGRESS',
+  'REPAIRED',
 ];
 
 @Injectable()

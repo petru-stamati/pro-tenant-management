@@ -18,6 +18,7 @@ import { PaymentConfirmationsModule } from './payment-confirmations/payment-conf
 import { UtilitiesModule } from './utilities/utilities.module';
 import { UtilityRatesModule } from './utility-rates/utility-rates.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { TasksModule } from './tasks/tasks.module';
 import { NotesModule } from './notes/notes.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -50,6 +51,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     UtilitiesModule,
     UtilityRatesModule,
     MaintenanceModule,
+    TasksModule,
     NotesModule,
     AnalyticsModule,
     NotificationsModule,

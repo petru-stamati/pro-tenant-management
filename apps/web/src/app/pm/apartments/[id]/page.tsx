@@ -19,10 +19,11 @@ import { formatEUR, formatRON, dateFormatter } from "@/lib/format";
 
 const MAINTENANCE_LABEL: Record<string, string> = {
   REPORTED: "Reported",
-  TRIAGED: "Triaged",
-  PROPOSAL_CREATED: "Proposal created",
+  TRIAGED: "Inspected",
+  PROPOSAL_CREATED: "Quote proposed",
   PENDING_OWNER_APPROVAL: "Pending approval",
   IN_PROGRESS: "In progress",
+  REPAIRED: "Repaired",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };

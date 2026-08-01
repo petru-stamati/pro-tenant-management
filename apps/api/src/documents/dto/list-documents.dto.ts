@@ -25,4 +25,8 @@ export class ListDocumentsDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   paymentConfirmationId?: string;
+
+  @IsOptional()
+  @IsString()
+  taskId?: string;
 }

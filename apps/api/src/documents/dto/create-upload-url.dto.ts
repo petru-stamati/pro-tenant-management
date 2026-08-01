@@ -39,4 +39,8 @@ export class CreateUploadUrlDto {
   @IsOptional()
   @IsString()
   paymentConfirmationId?: string;
+
+  @IsOptional()
+  @IsString()
+  taskId?: string;
 }

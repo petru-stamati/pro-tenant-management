@@ -22,10 +22,11 @@ import { formatEUR, dateFormatter } from "@/lib/format";
 
 const STATUS_LABEL: Record<string, string> = {
   REPORTED: "Reported",
-  TRIAGED: "Triaged",
-  PROPOSAL_CREATED: "Proposal created",
+  TRIAGED: "Inspected",
+  PROPOSAL_CREATED: "Quote proposed",
   PENDING_OWNER_APPROVAL: "Pending owner approval",
   IN_PROGRESS: "In progress",
+  REPAIRED: "Repaired",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -47,7 +48,16 @@ export default function MaintenanceDetailPage() {
   async function markTriaged() {
     try {
       await changeStatus.mutateAsync({ toStatus: "TRIAGED" });
-      toast.success("Marked as triaged");
+      toast.success("Marked as inspected");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Something went wrong.");
+    }
+  }
+
+  async function markRepaired() {
+    try {
+      await changeStatus.mutateAsync({ toStatus: "REPAIRED" });
+      toast.success("Marked as repaired");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Something went wrong.");
     }
@@ -110,7 +120,7 @@ export default function MaintenanceDetailPage() {
         <div className="mt-4 flex flex-wrap gap-2">
           {request.status === "REPORTED" && (
             <Button size="sm" onClick={markTriaged} disabled={changeStatus.isPending}>
-              Mark as triaged
+              Mark as inspected
             </Button>
           )}
           {(request.status === "TRIAGED" || request.status === "PROPOSAL_CREATED") && (
@@ -158,6 +168,11 @@ export default function MaintenanceDetailPage() {
             </Dialog>
           )}
           {request.status === "IN_PROGRESS" && (
+            <Button size="sm" onClick={markRepaired} disabled={changeStatus.isPending}>
+              Mark as repaired
+            </Button>
+          )}
+          {request.status === "REPAIRED" && (
             <Button size="sm" onClick={markCompleted} disabled={changeStatus.isPending}>
               Mark as completed
             </Button>
