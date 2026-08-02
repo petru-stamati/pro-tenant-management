@@ -511,11 +511,6 @@ function RecordPaymentDialog({
       setError("Select at least one invoice this payment covers.");
       return;
     }
-    if (paymentMethod === "BANK_TRANSFER" && !file) {
-      setError("Upload the proof of transfer (OP) for a bank transfer payment.");
-      return;
-    }
-
     try {
       const confirmation = await createPayment.mutateAsync({
         apartmentId,
@@ -570,8 +565,8 @@ function RecordPaymentDialog({
 
           {paymentMethod === "BANK_TRANSFER" ? (
             <div className="flex flex-col gap-2">
-              <Label>Proof of transfer (OP)</Label>
-              <Input type="file" accept="image/*,application/pdf" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <Label>Proof of transfer (OP) — optional</Label>
+              <Input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </div>
           ) : (
             <p className="rounded-md bg-accent/40 px-3 py-2 text-[12.5px] text-muted-foreground">
