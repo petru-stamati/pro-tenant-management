@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useApartments } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
 import { Button } from "@/components/ui/button";
-import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
+import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
 import { ApartmentFormDialog } from "@/components/apartment-form-dialog";
 import { formatEUR } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "ALL" | "VACANT" | "OCCUPIED";
+type StatusFilter = "ALL" | "VACANT" | "OCCUPIED" | "UNDER_MAINTENANCE";
 
 export default function ApartmentsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -27,6 +27,7 @@ export default function ApartmentsPage() {
       all: data.length,
       vacant: data.filter((a) => a.status === "VACANT").length,
       occupied: data.filter((a) => a.status === "OCCUPIED").length,
+      underMaintenance: data.filter((a) => a.status === "UNDER_MAINTENANCE").length,
     };
   }, [apartments]);
 
@@ -50,6 +51,9 @@ export default function ApartmentsPage() {
         <FilterButton active={statusFilter === "VACANT"} onClick={() => setStatusFilter("VACANT")}>
           Vacant ({counts.vacant})
         </FilterButton>
+        <FilterButton active={statusFilter === "UNDER_MAINTENANCE"} onClick={() => setStatusFilter("UNDER_MAINTENANCE")}>
+          Under maintenance ({counts.underMaintenance})
+        </FilterButton>
       </div>
 
       {isLoading ? (
@@ -64,9 +68,7 @@ export default function ApartmentsPage() {
             >
               <div className="relative h-[110px] bg-gradient-to-br from-accent to-muted">
                 <span className="absolute top-2.5 right-2.5">
-                  <StatusChip tone={apartmentStatusTone(apt.status)}>
-                    {apt.status === "OCCUPIED" ? "Occupied" : "Vacant"}
-                  </StatusChip>
+                  <StatusChip tone={apartmentStatusTone(apt.status)}>{apartmentStatusLabel(apt.status)}</StatusChip>
                 </span>
               </div>
               <div className="p-4">
@@ -85,7 +87,7 @@ export default function ApartmentsPage() {
                           month: "short",
                           year: "numeric",
                         })
-                      : "Vacant"
+                      : apartmentStatusLabel(apt.status)
                   }
                 />
               </div>

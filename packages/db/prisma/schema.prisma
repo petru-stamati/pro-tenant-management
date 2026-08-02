@@ -159,6 +159,7 @@ model User {
   recordedPaymentConfirmations PaymentConfirmation[]    @relation("PaymentConfirmationRecordedBy")
   createdTasks                 Task[]                   @relation("TaskCreatedBy")
   taskComments                 TaskComment[]            @relation("TaskCommentAuthor")
+  loggedShowings                Showing[]               @relation("ShowingCreatedBy")
 
   /// Bumped to instantly invalidate every outstanding access token for this
   /// user (e.g. an admin force-disables a compromised account) without
@@ -239,6 +240,7 @@ model Owner {
   apartmentInvoices    ApartmentInvoice[]
   paymentConfirmations PaymentConfirmation[]
   tasks                Task[]
+  showings             Showing[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -250,6 +252,11 @@ model Owner {
 enum ApartmentStatus {
   VACANT
   OCCUPIED
+  /// Vacant but not showable — mid-repair/renovation between tenants. Set
+  /// manually by the PM; leases.service.ts still forces OCCUPIED on
+  /// activation and VACANT on termination, so this is only ever a deliberate
+  /// PM choice in between, never something the lease lifecycle overwrites.
+  UNDER_MAINTENANCE
 }
 
 enum FurnishedStatus {
@@ -291,6 +298,7 @@ model Apartment {
   apartmentInvoices    ApartmentInvoice[]
   paymentConfirmations PaymentConfirmation[]
   tasks                Task[]
+  showings             Showing[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -298,6 +306,33 @@ model Apartment {
 
   @@index([ownerId])
   @@index([status])
+  @@index([deletedAt])
+}
+
+/// Optional log of a prospective tenant viewing a vacant apartment — purely
+/// informational (PRD: "some get rented just by phone", so this is never a
+/// required step before a lease can be created).
+model Showing {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized, see file header
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+
+  scheduledAt     DateTime
+  prospectName    String
+  prospectContact String?
+  notes           String?
+
+  createdById String
+  createdBy   User   @relation("ShowingCreatedBy", fields: [createdById], references: [id])
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([apartmentId])
+  @@index([ownerId])
   @@index([deletedAt])
 }
 
@@ -966,13 +1001,26 @@ enum TaskStatus {
   CANCELLED
 }
 
+/// Distinguishes the handful of task shapes that get special UI/completion
+/// behavior from the plain general-purpose ones. GENERAL covers everything
+/// created manually via "+ New task" (including the old ad-hoc pattern of
+/// inferring "this is a renewal task" from leaseId alone).
+enum TaskKind {
+  GENERAL
+  LEASE_RENEWAL
+  LEASE_SIGNING
+  MOVE_OUT_INSPECTION
+}
+
 model Task {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   ownerId     String // denormalized, see file header — always set (every task is about one owner's portfolio), independent of apartmentId
   apartmentId String?
   tenantId    String?
-  /// Set only for system-generated lease-renewal tasks (see TasksService.syncLeaseRenewalTasks) —
-  /// lets the UI offer a "complete = renew this lease" flow and lets renew()/terminate() auto-close it.
+  kind        TaskKind @default(GENERAL)
+  /// Set for lease-renewal tasks (TasksService.syncLeaseRenewalTasks) — lets the UI
+  /// offer a "complete = renew this lease" flow and lets renew()/terminate() auto-close it.
+  /// Also backfilled onto a LEASE_SIGNING task once it completes, linking it to the lease it created.
   leaseId     String?
   /// Set only for the "hand over cash to the Owner" task auto-created when a
   /// PaymentConfirmation is logged with paymentMethod CASH (see
@@ -1066,6 +1114,8 @@ enum NotificationType {
   RENT_RECEIVED
   PROPOSAL_PENDING_APPROVAL
   PROPOSAL_DECIDED
+  TASK_ASSIGNED
+  TASK_COMPLETED
 }
 
 enum NotificationChannel {

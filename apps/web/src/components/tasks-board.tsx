@@ -9,6 +9,7 @@ import {
   useCreateTask,
   useUpdateTask,
   useCreateTaskComment,
+  useCompleteLeaseSigning,
   type Task,
   type TaskStatus,
 } from "@/hooks/use-tasks";
@@ -16,6 +17,7 @@ import { useRenewLease } from "@/hooks/use-leases";
 import { useOpenItems, TASK_STATUS_LABEL, type UnifiedItem } from "@/hooks/use-open-items";
 import { useApartments } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
+import { useCreateTenant } from "@/hooks/use-tenants";
 import { useAuth } from "@/lib/auth-context";
 import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
 import { ApiError } from "@/lib/api-client";
@@ -126,14 +128,22 @@ export function TasksBoard({ role }: { role: "PM" | "OWNER" }) {
   );
 }
 
+function splitName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/);
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") || parts[0] };
+}
+
 function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
   const [open, setOpen] = useState(false);
   const { data: owners } = useOwners();
   const create = useCreateTask();
+  const createTenant = useCreateTenant();
   const upload = useUploadDocument();
   const [ownerId, setOwnerId] = useState("");
   const { data: apartments } = useApartments(role === "PM" ? { ownerId: ownerId || undefined } : {});
+  const [kind, setKind] = useState<"GENERAL" | "LEASE_SIGNING">("GENERAL");
   const [apartmentId, setApartmentId] = useState("");
+  const [tenantName, setTenantName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [urgent, setUrgent] = useState(false);
@@ -141,10 +151,52 @@ function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const vacantApartments = (apartments?.data ?? []).filter((a) => a.status === "VACANT");
+
+  function resetForm() {
+    setOpen(false);
+    setKind("GENERAL");
+    setOwnerId("");
+    setApartmentId("");
+    setTenantName("");
+    setTitle("");
+    setDescription("");
+    setUrgent(false);
+    setAssignedToRole("OWNER");
+    setFile(null);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     try {
+      if (kind === "LEASE_SIGNING") {
+        const apartment = apartments?.data.find((a) => a.id === apartmentId);
+        const { firstName, lastName } = splitName(tenantName);
+        const slug = tenantName.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "tenant";
+        const tenant = await createTenant.mutateAsync({
+          firstName,
+          lastName,
+          email: `${slug}.${Date.now()}@placeholder.tenant`,
+        });
+        const task = await create.mutateAsync({
+          ownerId: role === "PM" ? ownerId : undefined,
+          apartmentId,
+          tenantId: tenant.id,
+          kind: "LEASE_SIGNING",
+          title: `Lease signing — ${apartment?.name ?? ""}`,
+          description: description || `${tenantName} wants to rent this apartment.`,
+          urgent,
+          assignedToRole: "ADMIN",
+        });
+        if (file) {
+          await upload.mutateAsync({ file, category: "CONTRACT", taskId: task.id });
+        }
+        toast.success("Lease signing started");
+        resetForm();
+        return;
+      }
+
       const apartment = apartments?.data.find((a) => a.id === apartmentId);
       const task = await create.mutateAsync({
         ownerId: role === "PM" ? ownerId : undefined,
@@ -159,21 +211,17 @@ function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
         await upload.mutateAsync({ file, category: "OTHER", taskId: task.id });
       }
       toast.success("Task created");
-      setOpen(false);
-      setOwnerId("");
-      setApartmentId("");
-      setTitle("");
-      setDescription("");
-      setUrgent(false);
-      setAssignedToRole("OWNER");
-      setFile(null);
+      resetForm();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     }
   }
 
-  const saving = create.isPending || upload.isPending;
-  const canSubmit = title && description && (role === "OWNER" || ownerId);
+  const saving = create.isPending || createTenant.isPending || upload.isPending;
+  const canSubmit =
+    kind === "LEASE_SIGNING"
+      ? apartmentId && tenantName.trim() && (role === "OWNER" || ownerId)
+      : title && description && (role === "OWNER" || ownerId);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -183,6 +231,18 @@ function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
           <DialogTitle>New task</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+          <div className="flex flex-col gap-2">
+            <Label>Type</Label>
+            <Select value={kind} onValueChange={(v) => { setKind((v as typeof kind) ?? "GENERAL"); setApartmentId(""); }}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="GENERAL">General task</SelectItem>
+                <SelectItem value="LEASE_SIGNING">Lease signing — new tenant wants to rent a unit</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {role === "PM" && (
             <div className="flex flex-col gap-2">
               <Label>Owner</Label>
@@ -200,58 +260,98 @@ function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
               </Select>
             </div>
           )}
-          <div className="flex flex-col gap-2">
-            <Label>Apartment — optional</Label>
-            <Select value={apartmentId} onValueChange={(v) => setApartmentId(v ?? "")} disabled={role === "PM" && !ownerId}>
-              <SelectTrigger>
-                <SelectValue placeholder="General (not apartment-specific)" />
-              </SelectTrigger>
-              <SelectContent>
-                {apartments?.data.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Title</Label>
-            <Input required value={title} onChange={(e) => setTitle(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label>Description</Label>
-            <Textarea required rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          {role === "PM" && (
-            <div className="flex flex-col gap-2">
-              <Label>Assigned to</Label>
-              <Select value={assignedToRole} onValueChange={(v) => setAssignedToRole((v as "OWNER" | "ADMIN") ?? "OWNER")}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="OWNER">Owner — needs their answer/decision</SelectItem>
-                  <SelectItem value="ADMIN">Myself / PM team — internal to-do</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+
+          {kind === "LEASE_SIGNING" ? (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label>Apartment</Label>
+                <Select value={apartmentId} onValueChange={(v) => setApartmentId(v ?? "")} disabled={role === "PM" && !ownerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={vacantApartments.length === 0 ? "No vacant apartments" : "Select a vacant apartment"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {vacantApartments.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Tenant name</Label>
+                <Input required value={tenantName} onChange={(e) => setTenantName(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Requirements / notes — optional</Label>
+                <Textarea
+                  rows={2}
+                  placeholder="e.g. wants to negotiate rent, needs a TV in the unit…"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+              <p className="text-[11.5px] text-muted-foreground">
+                Attach the tenant&rsquo;s ID or a draft contract below if you have it — assigned to the PM to gather documents and send for signature.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label>Apartment — optional</Label>
+                <Select value={apartmentId} onValueChange={(v) => setApartmentId(v ?? "")} disabled={role === "PM" && !ownerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="General (not apartment-specific)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {apartments?.data.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Title</Label>
+                <Input required value={title} onChange={(e) => setTitle(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Description</Label>
+                <Textarea required rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+              </div>
+              {role === "PM" && (
+                <div className="flex flex-col gap-2">
+                  <Label>Assigned to</Label>
+                  <Select value={assignedToRole} onValueChange={(v) => setAssignedToRole((v as "OWNER" | "ADMIN") ?? "OWNER")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="OWNER">Owner — needs their answer/decision</SelectItem>
+                      <SelectItem value="ADMIN">Myself / PM team — internal to-do</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {role === "OWNER" && (
+                <p className="text-[11.5px] text-muted-foreground">This task will be sent to your property manager.</p>
+              )}
+            </>
           )}
-          {role === "OWNER" && (
-            <p className="text-[11.5px] text-muted-foreground">This task will be sent to your property manager.</p>
-          )}
+
           <label className="flex items-center gap-1.5 text-[12.5px]">
             <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
             Urgent
           </label>
           <div className="flex flex-col gap-2">
-            <Label>Attachment — optional</Label>
+            <Label>{kind === "LEASE_SIGNING" ? "Tenant ID / draft contract — optional" : "Attachment — optional"}</Label>
             <Input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </div>
           {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={saving || !canSubmit}>
-              {saving ? "Saving…" : "Create task"}
+              {saving ? "Saving…" : kind === "LEASE_SIGNING" ? "Start lease signing" : "Create task"}
             </Button>
           </DialogFooter>
         </form>
@@ -287,12 +387,25 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
   const { data: documents } = useDocuments({ taskId: task.id });
   const upload = useUploadDocument();
   const renew = useRenewLease(task.leaseId ?? "__none__");
+  const completeSigning = useCompleteLeaseSigning(task.id);
   const [comment, setComment] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [showRenewForm, setShowRenewForm] = useState(false);
   const [renewForm, setRenewForm] = useState({ startDate: "", endDate: "", rentAmountEUR: "" });
   const [renewalFile, setRenewalFile] = useState<File | null>(null);
   const [renewError, setRenewError] = useState<string | null>(null);
+  const [showSigningForm, setShowSigningForm] = useState(false);
+  const [signingForm, setSigningForm] = useState({
+    startDate: "",
+    endDate: "",
+    rentAmountEUR: "",
+    rentVatIncluded: true,
+    termMonths: "12",
+    autoRenewal: false,
+    depositAmountEUR: "",
+  });
+  const [signingFile, setSigningFile] = useState<File | null>(null);
+  const [signingError, setSigningError] = useState<string | null>(null);
 
   function openRenewForm() {
     if (task.lease) {
@@ -307,11 +420,23 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
     setShowRenewForm(true);
   }
 
+  function openSigningForm() {
+    const start = new Date();
+    const end = addMonths(start, 12);
+    setSigningForm((f) => ({ ...f, startDate: toDateInputValue(start), endDate: toDateInputValue(end) }));
+    setShowSigningForm(true);
+  }
+
   async function handleStatusChange(status: TaskStatus) {
-    // A lease-renewal task's "Completed" IS the renewal — route it through the same
-    // Renew flow the Leases tab uses so the two tabs can never disagree with each other.
-    if (status === "COMPLETED" && task.leaseId) {
+    // A lease-renewal task's "Completed" IS the renewal, and a lease-signing task's
+    // "Completed" IS the lease being created — route both through the same mutations
+    // the Leases tab uses so the two tabs can never disagree with each other.
+    if (status === "COMPLETED" && task.kind === "LEASE_RENEWAL" && task.leaseId) {
       openRenewForm();
+      return;
+    }
+    if (status === "COMPLETED" && task.kind === "LEASE_SIGNING") {
+      openSigningForm();
       return;
     }
     try {
@@ -350,6 +475,31 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
       setRenewalFile(null);
     } catch (err) {
       setRenewError(err instanceof ApiError ? err.message : "Could not renew the lease.");
+    }
+  }
+
+  async function handleCompleteSigning(e: React.FormEvent) {
+    e.preventDefault();
+    setSigningError(null);
+    try {
+      const lease = await completeSigning.mutateAsync({
+        startDate: signingForm.startDate,
+        endDate: signingForm.endDate,
+        rentAmountEUR: Number(signingForm.rentAmountEUR),
+        rentVatIncluded: signingForm.rentVatIncluded,
+        termMonths: signingForm.termMonths ? Number(signingForm.termMonths) : undefined,
+        autoRenewal: signingForm.autoRenewal,
+        depositAmountEUR: Number(signingForm.depositAmountEUR),
+      });
+      if (signingFile) {
+        await upload.mutateAsync({ file: signingFile, category: "CONTRACT", leaseId: lease.id });
+      }
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Lease signed — apartment is now rented");
+      setShowSigningForm(false);
+      setSigningFile(null);
+    } catch (err) {
+      setSigningError(err instanceof ApiError ? err.message : "Could not finalize the lease.");
     }
   }
 
@@ -440,9 +590,14 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
                 ))}
               </SelectContent>
             </Select>
-            {task.leaseId && task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
+            {task.kind === "LEASE_RENEWAL" && task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
               <p className="text-[11.5px] text-muted-foreground">
                 This is a lease renewal task — marking it Completed will renew the lease.
+              </p>
+            )}
+            {task.kind === "LEASE_SIGNING" && task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
+              <p className="text-[11.5px] text-muted-foreground">
+                This is a lease signing task — marking it Completed will create the lease and mark the apartment rented.
               </p>
             )}
           </div>
@@ -494,6 +649,94 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
                 </Button>
                 <Button type="submit" size="sm" disabled={renew.isPending || upload.isPending}>
                   {renew.isPending || upload.isPending ? "Renewing…" : "Renew & complete"}
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {showSigningForm && (
+            <form onSubmit={handleCompleteSigning} className="flex flex-col gap-3 rounded-md border border-border bg-accent/20 p-3">
+              <p className="text-[12.5px] font-medium">Complete lease signing</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label>Start date</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={signingForm.startDate}
+                    onChange={(e) => setSigningForm((f) => ({ ...f, startDate: e.target.value }))}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>End date</Label>
+                  <Input
+                    type="date"
+                    required
+                    value={signingForm.endDate}
+                    onChange={(e) => setSigningForm((f) => ({ ...f, endDate: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <Label>Rent (EUR)</Label>
+                  <Input
+                    type="number"
+                    required
+                    value={signingForm.rentAmountEUR}
+                    onChange={(e) => setSigningForm((f) => ({ ...f, rentAmountEUR: e.target.value }))}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Deposit (EUR)</Label>
+                  <Input
+                    type="number"
+                    required
+                    value={signingForm.depositAmountEUR}
+                    onChange={(e) => setSigningForm((f) => ({ ...f, depositAmountEUR: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Term (months)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={signingForm.termMonths}
+                  onChange={(e) => setSigningForm((f) => ({ ...f, termMonths: e.target.value }))}
+                />
+              </div>
+              <label className="flex items-center gap-1.5 text-[12.5px]">
+                <input
+                  type="checkbox"
+                  checked={signingForm.rentVatIncluded}
+                  onChange={(e) => setSigningForm((f) => ({ ...f, rentVatIncluded: e.target.checked }))}
+                />
+                Rent amount is VAT incl.
+              </label>
+              <label className="flex items-center gap-1.5 text-[12.5px]">
+                <input
+                  type="checkbox"
+                  checked={signingForm.autoRenewal}
+                  onChange={(e) => setSigningForm((f) => ({ ...f, autoRenewal: e.target.checked }))}
+                />
+                Auto-renewal clause
+              </label>
+              <div className="flex flex-col gap-2">
+                <Label>Signed contract — optional</Label>
+                <Input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setSigningFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              {signingError && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{signingError}</p>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowSigningForm(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" disabled={completeSigning.isPending || upload.isPending}>
+                  {completeSigning.isPending || upload.isPending ? "Saving…" : "Sign & complete"}
                 </Button>
               </div>
             </form>

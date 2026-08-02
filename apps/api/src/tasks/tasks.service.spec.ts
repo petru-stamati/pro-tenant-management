@@ -7,6 +7,17 @@ function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser
 }
 
 function makePrisma() {
+  const tx = {
+    lease: {
+      create: jest.fn(async (args) => ({ id: 'lease-new', ...args.data })),
+    },
+    apartment: {
+      update: jest.fn(async (args) => ({ id: args.where.id, ...args.data })),
+    },
+    task: {
+      update: jest.fn(async (args) => ({ id: args.where.id, ...args.data })),
+    },
+  };
   return {
     client: {
       apartment: { findFirst: jest.fn() },
@@ -18,8 +29,10 @@ function makePrisma() {
       taskComment: {
         create: jest.fn((args) => ({ id: 'comment-1', ...args.data })),
       },
+      $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     forOwnerScope: jest.fn(),
+    tx,
   };
 }
 
@@ -27,10 +40,14 @@ function makePermissions(allowedOwnerIds: string[] | 'all' = 'all') {
   return { resolveAllowedOwnerIds: jest.fn().mockResolvedValue(allowedOwnerIds) };
 }
 
+function makeNotifications() {
+  return { notifyRole: jest.fn().mockResolvedValue(undefined) };
+}
+
 describe('TasksService.create', () => {
   it('forces assignedToRole to ADMIN and ownerId to the caller own owner when an Owner creates a task', async () => {
     const prisma = makePrisma();
-    const service = new TasksService(prisma as never, makePermissions() as never);
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await service.create(
       { ownerId: 'someone-elses-owner-id', title: 'Please fix the boiler', description: 'It leaks', assignedToRole: 'OWNER' } as never,
@@ -46,7 +63,7 @@ describe('TasksService.create', () => {
 
   it('rejects an Owner-created task when the account has no linked owner company', async () => {
     const prisma = makePrisma();
-    const service = new TasksService(prisma as never, makePermissions() as never);
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await expect(
       service.create(
@@ -58,7 +75,7 @@ describe('TasksService.create', () => {
 
   it('requires an explicit ownerId when a PM creates a task, and defaults assignment to OWNER', async () => {
     const prisma = makePrisma();
-    const service = new TasksService(prisma as never, makePermissions() as never);
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await expect(
       service.create({ title: 'x', description: 'y' } as never, makeUser({ roleKey: 'ADMIN' })),
@@ -75,7 +92,7 @@ describe('TasksService.create', () => {
 
   it('lets a PM direct a task at themselves (ADMIN) instead of the Owner', async () => {
     const prisma = makePrisma();
-    const service = new TasksService(prisma as never, makePermissions() as never);
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await service.create(
       { ownerId: 'owner-1', title: 'Follow up with contractor', description: 'x', assignedToRole: 'ADMIN' } as never,
@@ -89,7 +106,7 @@ describe('TasksService.create', () => {
   it('rejects an apartment that belongs to a different owner than the task', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-2' });
-    const service = new TasksService(prisma as never, makePermissions() as never);
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await expect(
       service.create(
@@ -105,7 +122,7 @@ describe('TasksService.update / createComment', () => {
     const prisma = makePrisma();
     const scoped = { task: { findFirst: jest.fn().mockResolvedValue(null) } };
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new TasksService(prisma as never, makePermissions(['owner-1']) as never);
+    const service = new TasksService(prisma as never, makePermissions(['owner-1']) as never, makeNotifications() as never);
 
     await expect(
       service.update(makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }), 'task-other-owner', { status: 'COMPLETED' } as never),
@@ -119,7 +136,7 @@ describe('TasksService.update / createComment', () => {
     const prisma = makePrisma();
     const scoped = { task: { findFirst: jest.fn().mockResolvedValue({ id: 'task-1' }) } };
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new TasksService(prisma as never, makePermissions(['owner-1']) as never);
+    const service = new TasksService(prisma as never, makePermissions(['owner-1']) as never, makeNotifications() as never);
 
     await service.update(makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }), 'task-1', { status: 'COMPLETED' } as never);
     expect(prisma.client.task.update).toHaveBeenCalledWith({ where: { id: 'task-1' }, data: { status: 'COMPLETED' } });
@@ -157,7 +174,7 @@ describe('TasksService.list (auto-generated lease renewal tasks)', () => {
     };
     const scoped = makeScoped(lease);
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new TasksService(prisma as never, makePermissions('all') as never);
+    const service = new TasksService(prisma as never, makePermissions('all') as never, makeNotifications() as never);
 
     await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
 
@@ -181,7 +198,7 @@ describe('TasksService.list (auto-generated lease renewal tasks)', () => {
     };
     const scoped = makeScoped(lease);
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new TasksService(prisma as never, makePermissions('all') as never);
+    const service = new TasksService(prisma as never, makePermissions('all') as never, makeNotifications() as never);
 
     await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
 
@@ -203,7 +220,7 @@ describe('TasksService.list (auto-generated lease renewal tasks)', () => {
     };
     const scoped = makeScoped(lease, { id: 'task-existing', status: 'CANCELLED' });
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new TasksService(prisma as never, makePermissions('all') as never);
+    const service = new TasksService(prisma as never, makePermissions('all') as never, makeNotifications() as never);
 
     await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
 
@@ -223,7 +240,7 @@ describe('TasksService.list (auto-generated lease renewal tasks)', () => {
     };
     const scoped = makeScoped(lease);
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new TasksService(prisma as never, makePermissions('all') as never);
+    const service = new TasksService(prisma as never, makePermissions('all') as never, makeNotifications() as never);
 
     await service.list(makeUser({ roleKey: 'ADMIN' }), {} as never);
 
@@ -234,10 +251,174 @@ describe('TasksService.list (auto-generated lease renewal tasks)', () => {
     const prisma = makePrisma();
     const scoped = makeScoped(null);
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new TasksService(prisma as never, makePermissions([]) as never);
+    const service = new TasksService(prisma as never, makePermissions([]) as never, makeNotifications() as never);
 
     await service.list(makeUser({ roleKey: 'TENANT', tenantId: 'tenant-1' }), {} as never);
 
     expect(scoped.lease.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('TasksService.create — LEASE_SIGNING', () => {
+  it('rejects a lease-signing task without a tenantId', async () => {
+    const prisma = makePrisma();
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.create(
+        { ownerId: 'owner-1', apartmentId: 'apt-1', kind: 'LEASE_SIGNING', title: 'x', description: 'y' } as never,
+        makeUser({}),
+      ),
+    ).rejects.toThrow('tenantId is required');
+  });
+
+  it('rejects a lease-signing task without an apartmentId', async () => {
+    const prisma = makePrisma();
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.create(
+        { ownerId: 'owner-1', tenantId: 'tenant-1', kind: 'LEASE_SIGNING', title: 'x', description: 'y' } as never,
+        makeUser({}),
+      ),
+    ).rejects.toThrow('apartmentId is required');
+  });
+
+  it('rejects a lease-signing task for an apartment that already has an active lease', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1', currentLeaseId: 'lease-existing' });
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.create(
+        {
+          ownerId: 'owner-1',
+          apartmentId: 'apt-1',
+          tenantId: 'tenant-1',
+          kind: 'LEASE_SIGNING',
+          title: 'x',
+          description: 'y',
+        } as never,
+        makeUser({}),
+      ),
+    ).rejects.toThrow('already has an active lease');
+  });
+
+  it('creates a lease-signing task for a vacant apartment', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1', currentLeaseId: null });
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await service.create(
+      {
+        ownerId: 'owner-1',
+        apartmentId: 'apt-1',
+        tenantId: 'tenant-1',
+        kind: 'LEASE_SIGNING',
+        title: 'Lease signing — Ap 003',
+        description: 'y',
+      } as never,
+      makeUser({}),
+    );
+
+    expect(prisma.client.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ kind: 'LEASE_SIGNING', apartmentId: 'apt-1', tenantId: 'tenant-1' }) }),
+    );
+  });
+
+  it('always forces assignedToRole to ADMIN for a lease-signing task, even if the caller passed something else', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1', currentLeaseId: null });
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await service.create(
+      {
+        ownerId: 'owner-1',
+        apartmentId: 'apt-1',
+        tenantId: 'tenant-1',
+        kind: 'LEASE_SIGNING',
+        assignedToRole: 'OWNER',
+        title: 'Lease signing — Ap 003',
+        description: 'y',
+      } as never,
+      makeUser({ roleKey: 'ADMIN' }),
+    );
+
+    expect(prisma.client.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ assignedToRole: 'ADMIN' }) }),
+    );
+  });
+});
+
+describe('TasksService.completeLeaseSigning', () => {
+  function makeScopedTask(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'task-1',
+      ownerId: 'owner-1',
+      apartmentId: 'apt-1',
+      tenantId: 'tenant-1',
+      kind: 'LEASE_SIGNING',
+      status: 'OPEN',
+      ...overrides,
+    };
+  }
+
+  it('rejects completion when the task is not a lease-signing task', async () => {
+    const prisma = makePrisma();
+    const scoped = { task: { findFirst: jest.fn().mockResolvedValue(makeScopedTask({ kind: 'GENERAL' })) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.completeLeaseSigning(makeUser({}), 'task-1', { startDate: '2026-01-01', endDate: '2027-01-01', rentAmountEUR: 500, depositAmountEUR: 500 } as never),
+    ).rejects.toThrow('not a lease-signing task');
+  });
+
+  it('rejects completion when the task is already closed', async () => {
+    const prisma = makePrisma();
+    const scoped = { task: { findFirst: jest.fn().mockResolvedValue(makeScopedTask({ status: 'COMPLETED' })) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.completeLeaseSigning(makeUser({}), 'task-1', { startDate: '2026-01-01', endDate: '2027-01-01', rentAmountEUR: 500, depositAmountEUR: 500 } as never),
+    ).rejects.toThrow('already closed');
+  });
+
+  it('rejects completion when the apartment already has an active lease', async () => {
+    const prisma = makePrisma();
+    const scoped = { task: { findFirst: jest.fn().mockResolvedValue(makeScopedTask()) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: 'lease-existing' });
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.completeLeaseSigning(makeUser({}), 'task-1', { startDate: '2026-01-01', endDate: '2027-01-01', rentAmountEUR: 500, depositAmountEUR: 500 } as never),
+    ).rejects.toThrow('already has an active lease');
+  });
+
+  it('creates the lease, occupies the apartment, and completes the task', async () => {
+    const prisma = makePrisma();
+    const scoped = { task: { findFirst: jest.fn().mockResolvedValue(makeScopedTask()) } };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: null });
+    const service = new TasksService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    const result = await service.completeLeaseSigning(makeUser({ id: 'pm-1' }), 'task-1', {
+      startDate: '2026-01-01',
+      endDate: '2027-01-01',
+      rentAmountEUR: 500,
+      depositAmountEUR: 500,
+    } as never);
+
+    expect(result).toMatchObject({ id: 'lease-new', apartmentId: 'apt-1', tenantId: 'tenant-1', status: 'ACTIVE' });
+    expect(prisma.tx.apartment.update).toHaveBeenCalledWith({
+      where: { id: 'apt-1' },
+      data: { currentLeaseId: 'lease-new', status: 'OCCUPIED' },
+    });
+    expect(prisma.tx.task.update).toHaveBeenCalledWith({
+      where: { id: 'task-1' },
+      data: { leaseId: 'lease-new', status: 'COMPLETED' },
+    });
   });
 });

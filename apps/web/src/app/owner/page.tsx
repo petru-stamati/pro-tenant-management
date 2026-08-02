@@ -7,7 +7,7 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
+import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
 import { formatEUR, formatRON } from "@/lib/format";
 
 export default function OwnerDashboardPage() {
@@ -82,9 +82,7 @@ export default function OwnerDashboardPage() {
                       {apt.currentLease ? formatEUR(apt.currentLease.rentAmountEUR) : "—"}
                     </TableCell>
                     <TableCell>
-                      <StatusChip tone={apartmentStatusTone(apt.status)}>
-                        {apt.status === "OCCUPIED" ? "Occupied" : "Vacant"}
-                      </StatusChip>
+                      <StatusChip tone={apartmentStatusTone(apt.status)}>{apartmentStatusLabel(apt.status)}</StatusChip>
                     </TableCell>
                   </TableRow>
                 ))}

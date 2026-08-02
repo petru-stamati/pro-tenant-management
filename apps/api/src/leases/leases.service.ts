@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../common/permissions.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { paginate, skipTake } from '../common/pagination';
 import { CreateLeaseDto } from './dto/create-lease.dto';
@@ -13,6 +14,7 @@ export class LeasesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(user: AuthenticatedUser, query: ListLeasesDto) {
@@ -153,10 +155,11 @@ export class LeasesService {
     });
   }
 
-  async terminate(id: string, reason: string) {
+  async terminate(id: string, reason: string, terminatedBy: AuthenticatedUser) {
     const lease = await this.assertExists(id);
+    let vacatedApartmentName: string | null = null;
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const terminated = await this.prisma.client.$transaction(async (tx) => {
       const terminated = await tx.lease.update({
         where: { id: lease.id },
         data: { status: 'TERMINATED', terminationReason: reason },
@@ -168,6 +171,21 @@ export class LeasesService {
           where: { id: apartment.id },
           data: { currentLeaseId: null, status: 'VACANT' },
         });
+        // Every move-out gets an inspection task — cleaned/functional check +
+        // Handover document — before the unit is ready to show again.
+        await tx.task.create({
+          data: {
+            ownerId: lease.ownerId,
+            apartmentId: apartment.id,
+            kind: 'MOVE_OUT_INSPECTION',
+            title: `Move-out inspection — ${apartment.name}`,
+            description:
+              'Inspect the apartment now that the tenant has moved out: confirm it\'s cleaned and everything is functional, note any repairs needed, and upload the Handover document.',
+            assignedToRole: 'ADMIN',
+            createdById: terminatedBy.id,
+          },
+        });
+        vacatedApartmentName = apartment.name;
       }
       // The lease is gone — any pending renewal task for it is moot.
       await tx.task.updateMany({
@@ -176,6 +194,18 @@ export class LeasesService {
       });
       return terminated;
     });
+
+    if (vacatedApartmentName) {
+      await this.notifications.notifyRole(
+        lease.ownerId,
+        'ADMIN',
+        'TASK_ASSIGNED',
+        'Move-out inspection needed',
+        `${vacatedApartmentName} was just vacated — inspect it and upload the Handover document.`,
+        'Task',
+      );
+    }
+    return terminated;
   }
 
   private async assertExists(id: string) {

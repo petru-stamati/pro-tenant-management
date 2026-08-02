@@ -37,6 +37,7 @@ export function ApartmentFormDialog({
     addressLine: apartment?.addressLine ?? "",
     city: apartment?.city ?? "",
     sector: apartment?.sector ?? "",
+    status: apartment?.status ?? "VACANT",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -121,6 +122,27 @@ export function ApartmentFormDialog({
               />
             </div>
           </div>
+          {apartment?.status === "OCCUPIED" ? (
+            <p className="text-[11.5px] text-muted-foreground">
+              This unit is occupied — status is driven by its lease, not editable here.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="status">Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v) => setForm((f) => ({ ...f, status: (v as typeof form.status) ?? "VACANT" }))}
+              >
+                <SelectTrigger id="status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="VACANT">Vacant</SelectItem>
+                  <SelectItem value="UNDER_MAINTENANCE">Under maintenance (not showable)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="submit" disabled={pending || !form.ownerId}>

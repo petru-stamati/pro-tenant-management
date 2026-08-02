@@ -1,5 +1,5 @@
 import { IsBoolean, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { SystemRoleKey } from '@pro-tenant/db';
+import { SystemRoleKey, TaskKind } from '@pro-tenant/db';
 
 export class CreateTaskDto {
   /** Required when the caller is PM/Admin (who manages multiple owners) — ignored and forced to the caller's own owner when an Owner creates the task. */
@@ -31,4 +31,9 @@ export class CreateTaskDto {
   @IsOptional()
   @IsEnum(SystemRoleKey)
   assignedToRole?: SystemRoleKey;
+
+  /** LEASE_SIGNING requires apartmentId + tenantId (validated in the service — the apartment must be vacant). */
+  @IsOptional()
+  @IsEnum(TaskKind)
+  kind?: TaskKind;
 }

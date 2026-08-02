@@ -10,7 +10,7 @@ import { useDocuments, downloadDocument, type DocumentItem } from "@/hooks/use-d
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { StatusChip, apartmentStatusTone, paymentStatusTone, invoiceStatusTone } from "@/components/status-chip";
+import { StatusChip, apartmentStatusTone, apartmentStatusLabel, paymentStatusTone, invoiceStatusTone } from "@/components/status-chip";
 import { formatEUR, formatRON, dateFormatter } from "@/lib/format";
 
 export default function OwnerApartmentDetailPage() {
@@ -28,9 +28,7 @@ export default function OwnerApartmentDetailPage() {
         <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
           {apartment.addressLine}, {apartment.city}
           {apartment.sector ? `, ${apartment.sector}` : ""}
-          <StatusChip tone={apartmentStatusTone(apartment.status)}>
-            {apartment.status === "OCCUPIED" ? "Occupied" : "Vacant"}
-          </StatusChip>
+          <StatusChip tone={apartmentStatusTone(apartment.status)}>{apartmentStatusLabel(apartment.status)}</StatusChip>
         </p>
       </div>
 

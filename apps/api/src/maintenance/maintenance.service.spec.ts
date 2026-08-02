@@ -36,6 +36,10 @@ function makePermissions(allowedOwnerIds: string[] | 'all' = 'all') {
   return { resolveAllowedOwnerIds: jest.fn().mockResolvedValue(allowedOwnerIds) };
 }
 
+function makeNotifications() {
+  return { notifyRole: jest.fn().mockResolvedValue(undefined) };
+}
+
 describe('MaintenanceService state machine', () => {
   describe('changeStatus', () => {
     it.each([
@@ -46,7 +50,7 @@ describe('MaintenanceService state machine', () => {
     ])('allows the manual transition %s -> %s', async (from, to) => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: from });
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
       await expect(
         service.changeStatus('req-1', { toStatus: to } as never, makeUser({})),
@@ -64,7 +68,7 @@ describe('MaintenanceService state machine', () => {
     ])('blocks the illegal transition %s -> %s (approval gate cannot be bypassed)', async (from, to) => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: from });
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
       await expect(
         service.changeStatus('req-1', { toStatus: to } as never, makeUser({})),
@@ -74,7 +78,7 @@ describe('MaintenanceService state machine', () => {
     it('throws NotFoundException for a request that does not exist', async () => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue(null);
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
       await expect(
         service.changeStatus('ghost', { toStatus: 'TRIAGED' } as never, makeUser({})),
@@ -88,7 +92,7 @@ describe('MaintenanceService state machine', () => {
       async (status) => {
         const prisma = makePrisma();
         prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status });
-        const service = new MaintenanceService(prisma as never, makePermissions() as never);
+        const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
         await expect(service.cancel('req-1', 'tenant moved out', makeUser({}))).resolves.toBeDefined();
       },
     );
@@ -96,14 +100,14 @@ describe('MaintenanceService state machine', () => {
     it('refuses to cancel a request that is already COMPLETED', async () => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'COMPLETED' });
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
       await expect(service.cancel('req-1', 'too late', makeUser({}))).rejects.toThrow(BadRequestException);
     });
 
     it('refuses to cancel a request that is already CANCELLED', async () => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'CANCELLED' });
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
       await expect(service.cancel('req-1', 'again', makeUser({}))).rejects.toThrow(BadRequestException);
     });
   });
@@ -112,7 +116,7 @@ describe('MaintenanceService state machine', () => {
     it('requires the request to be TRIAGED or PROPOSAL_CREATED first', async () => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'REPORTED' });
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
       await expect(
         service.createProposal('req-1', { contractorName: 'X', description: 'y', costEUR: 10 } as never, makeUser({})),
       ).rejects.toThrow(BadRequestException);
@@ -121,7 +125,7 @@ describe('MaintenanceService state machine', () => {
     it('moves the request straight to PENDING_OWNER_APPROVAL once a proposal is attached', async () => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'TRIAGED' });
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
       await service.createProposal(
         'req-1',
         { contractorName: 'Ionescu SRL', description: 'fix it', costEUR: 100 } as never,
@@ -135,7 +139,7 @@ describe('MaintenanceService state machine', () => {
     it('supersedes any still-pending proposal when a revised quote is attached', async () => {
       const prisma = makePrisma();
       prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'PROPOSAL_CREATED' });
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
       await service.createProposal(
         'req-1',
         { contractorName: 'Second SRL', description: 'revised', costEUR: 150 } as never,
@@ -153,7 +157,7 @@ describe('MaintenanceService state machine', () => {
       const prisma = makePrisma();
       const scoped = { maintenanceRequest: { findFirst: jest.fn().mockResolvedValue(null) } };
       (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never);
+      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never, makeNotifications() as never);
 
       await expect(
         service.decideProposal('req-1', 'prop-1', 'APPROVED', makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' })),
@@ -166,7 +170,7 @@ describe('MaintenanceService state machine', () => {
         maintenanceRequest: { findFirst: jest.fn().mockResolvedValue({ id: 'req-1', status: 'IN_PROGRESS' }) },
       };
       (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never);
+      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never, makeNotifications() as never);
 
       await expect(
         service.decideProposal('req-1', 'prop-1', 'APPROVED', makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' })),
@@ -182,7 +186,7 @@ describe('MaintenanceService state machine', () => {
       };
       (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
       prisma.client.maintenanceProposal.findFirst.mockResolvedValue({ id: 'prop-1', status: 'SUPERSEDED' });
-      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never);
+      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never, makeNotifications() as never);
 
       await expect(
         service.decideProposal('req-1', 'prop-1', 'APPROVED', makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' })),
@@ -198,7 +202,7 @@ describe('MaintenanceService state machine', () => {
       };
       (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
       prisma.client.maintenanceProposal.findFirst.mockResolvedValue({ id: 'prop-1', status: 'PENDING' });
-      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never);
+      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never, makeNotifications() as never);
 
       const result = await service.decideProposal(
         'req-1',
@@ -218,7 +222,7 @@ describe('MaintenanceService state machine', () => {
       };
       (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
       prisma.client.maintenanceProposal.findFirst.mockResolvedValue({ id: 'prop-1', status: 'PENDING' });
-      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never);
+      const service = new MaintenanceService(prisma as never, makePermissions(['owner-1']) as never, makeNotifications() as never);
 
       const result = await service.decideProposal(
         'req-1',
@@ -238,7 +242,7 @@ describe('MaintenanceService state machine', () => {
         findFirst: jest.fn().mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' }),
       };
       (prisma.client as never as { lease: unknown }).lease = { findFirst: jest.fn().mockResolvedValue(null) };
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
       await expect(
         service.create(
@@ -256,7 +260,7 @@ describe('MaintenanceService state machine', () => {
       });
       const findMany = jest.fn().mockResolvedValue([]);
       prisma.client.maintenanceComment.findMany = findMany;
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
       await service.listComments(makeUser({ roleKey: 'TENANT', tenantId: 'tenant-1' }), 'req-1');
 
@@ -275,7 +279,7 @@ describe('MaintenanceService state machine', () => {
       (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
       const findMany = jest.fn().mockResolvedValue([]);
       prisma.client.maintenanceComment.findMany = findMany;
-      const service = new MaintenanceService(prisma as never, makePermissions() as never);
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
       await service.listComments(makeUser({ roleKey: 'ADMIN' }), 'req-1');
 

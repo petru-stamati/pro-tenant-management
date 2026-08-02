@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
+import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
 import { formatEUR, dateFormatter } from "@/lib/format";
 import { withVat, withoutVat } from "@/lib/vat";
@@ -141,7 +141,7 @@ export function LeasesBoard({ canManage }: { canManage: boolean }) {
                           <StatusChip tone={STATUS_TONE[lease.status]}>{lease.status.toLowerCase()}</StatusChip>
                         )
                       ) : (
-                        <StatusChip tone={apartmentStatusTone("VACANT")}>vacant</StatusChip>
+                        <StatusChip tone={apartmentStatusTone(a.status)}>{apartmentStatusLabel(a.status)}</StatusChip>
                       )}
                     </td>
                     <td className="p-3">

@@ -45,7 +45,7 @@ export class LeasesController {
 
   @Post(':id/terminate')
   @RequirePermission('leases:write')
-  terminate(@Param('id') id: string, @Body() dto: TerminateLeaseDto) {
-    return this.leases.terminate(id, dto.reason);
+  terminate(@Param('id') id: string, @Body() dto: TerminateLeaseDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.leases.terminate(id, dto.reason, user);
   }
 }

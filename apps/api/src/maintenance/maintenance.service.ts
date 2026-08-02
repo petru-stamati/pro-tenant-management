@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { MaintenanceStatus } from '@pro-tenant/db';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../common/permissions.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { paginate, skipTake } from '../common/pagination';
 import { CreateMaintenanceRequestDto } from './dto/create-maintenance-request.dto';
@@ -39,6 +40,7 @@ export class MaintenanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(user: AuthenticatedUser, query: ListMaintenanceRequestsDto) {
@@ -106,7 +108,7 @@ export class MaintenanceService {
       if (!hasLease) throw new ForbiddenException('You can only report issues for your own apartment');
     }
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const request = await this.prisma.client.$transaction(async (tx) => {
       const request = await tx.maintenanceRequest.create({
         data: {
           apartmentId: apartment.id,
@@ -122,6 +124,16 @@ export class MaintenanceService {
       });
       return request;
     });
+    await this.notifications.notifyRole(
+      apartment.ownerId,
+      'ADMIN',
+      'MAINTENANCE_STATUS_CHANGED',
+      `New issue reported — ${apartment.name}`,
+      dto.title,
+      'MaintenanceRequest',
+      request.id,
+    );
+    return request;
   }
 
   async update(id: string, dto: UpdateMaintenanceRequestDto) {
@@ -138,7 +150,7 @@ export class MaintenanceService {
       );
     }
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const updated = await this.prisma.client.$transaction(async (tx) => {
       const updated = await tx.maintenanceRequest.update({
         where: { id },
         data: {
@@ -151,6 +163,18 @@ export class MaintenanceService {
       });
       return updated;
     });
+    if (dto.toStatus === 'COMPLETED') {
+      await this.notifications.notifyRole(
+        request.ownerId,
+        'OWNER',
+        'MAINTENANCE_COMPLETED',
+        updated.title,
+        'This repair has been completed.',
+        'MaintenanceRequest',
+        id,
+      );
+    }
+    return updated;
   }
 
   async cancel(id: string, reason: string, changedBy: AuthenticatedUser) {
@@ -177,7 +201,7 @@ export class MaintenanceService {
       throw new BadRequestException('A request must be TRIAGED before a proposal can be attached');
     }
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const proposal = await this.prisma.client.$transaction(async (tx) => {
       // A revised quote supersedes whatever was still awaiting a decision —
       // "every proposal version" stays on record, nothing is overwritten (PRD §4.9).
       await tx.maintenanceProposal.updateMany({
@@ -209,6 +233,16 @@ export class MaintenanceService {
       });
       return proposal;
     });
+    await this.notifications.notifyRole(
+      request.ownerId,
+      'OWNER',
+      'PROPOSAL_PENDING_APPROVAL',
+      request.title,
+      `Quote from ${dto.contractorName} needs your approval.`,
+      'MaintenanceRequest',
+      requestId,
+    );
+    return proposal;
   }
 
   async decideProposal(
@@ -235,7 +269,7 @@ export class MaintenanceService {
 
     const nextRequestStatus: MaintenanceStatus = decision === 'APPROVED' ? 'IN_PROGRESS' : 'TRIAGED';
 
-    return this.prisma.client.$transaction(async (tx) => {
+    const updated = await this.prisma.client.$transaction(async (tx) => {
       await tx.maintenanceProposal.update({
         where: { id: proposalId },
         data: { status: decision, decidedById: decidedBy.id, decidedAt: new Date() },
@@ -255,6 +289,16 @@ export class MaintenanceService {
       });
       return updated;
     });
+    await this.notifications.notifyRole(
+      request.ownerId,
+      'ADMIN',
+      'PROPOSAL_DECIDED',
+      updated.title,
+      `The Owner ${decision.toLowerCase()} the quote.`,
+      'MaintenanceRequest',
+      requestId,
+    );
+    return updated;
   }
 
   async listComments(user: AuthenticatedUser, requestId: string) {

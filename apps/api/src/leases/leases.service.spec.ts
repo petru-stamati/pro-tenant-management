@@ -18,6 +18,7 @@ function makePrisma() {
     },
     task: {
       updateMany: jest.fn(async () => ({ count: 0 })),
+      create: jest.fn(async (args) => ({ id: 'task-1', ...args.data })),
     },
   };
   return {
@@ -31,6 +32,10 @@ function makePrisma() {
   };
 }
 
+function makeNotifications() {
+  return { notifyRole: jest.fn().mockResolvedValue(undefined) };
+}
+
 function makePermissions() {
   return { resolveAllowedOwnerIds: jest.fn().mockResolvedValue('all') };
 }
@@ -39,7 +44,7 @@ describe('LeasesService.create', () => {
   it('rejects a lease for a non-existent apartment', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue(null);
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await expect(
       service.create({ apartmentId: 'ghost', tenantId: 't-1', startDate: '2026-01-01', endDate: '2027-01-01', rentAmountEUR: 500, depositAmountEUR: 500 } as never, makeUser({})),
@@ -49,7 +54,7 @@ describe('LeasesService.create', () => {
   it('marks the apartment OCCUPIED and sets currentLeaseId when created as ACTIVE', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await service.create(
       { apartmentId: 'apt-1', tenantId: 't-1', startDate: '2026-01-01', endDate: '2027-01-01', rentAmountEUR: 500, depositAmountEUR: 500, status: 'ACTIVE' } as never,
@@ -65,7 +70,7 @@ describe('LeasesService.create', () => {
   it('rejects a new ACTIVE lease for an apartment that already has one', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1', currentLeaseId: 'lease-existing' });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await expect(
       service.create(
@@ -79,7 +84,7 @@ describe('LeasesService.create', () => {
   it('leaves the apartment untouched when the lease is created as DRAFT (the default)', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await service.create(
       { apartmentId: 'apt-1', tenantId: 't-1', startDate: '2026-01-01', endDate: '2027-01-01', rentAmountEUR: 500, depositAmountEUR: 500 } as never,
@@ -101,7 +106,7 @@ describe('LeasesService.renew', () => {
       depositAmountEUR: 500,
       depositStatus: 'HELD',
     });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     const result = await service.renew(
       'lease-old',
@@ -131,7 +136,7 @@ describe('LeasesService.renew', () => {
       depositAmountEUR: 750,
       depositStatus: 'HELD',
     });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     const result = await service.renew(
       'lease-old',
@@ -145,7 +150,7 @@ describe('LeasesService.renew', () => {
   it('throws NotFoundException when renewing a lease that does not exist', async () => {
     const prisma = makePrisma();
     prisma.client.lease.findFirst.mockResolvedValue(null);
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
     await expect(
       service.renew('ghost', { startDate: '2027-01-01', endDate: '2028-01-01', rentAmountEUR: 500 } as never, makeUser({})),
@@ -158,9 +163,9 @@ describe('LeasesService.terminate', () => {
     const prisma = makePrisma();
     prisma.client.lease.findFirst.mockResolvedValue({ id: 'lease-1', apartmentId: 'apt-1' });
     prisma.tx.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: 'lease-1' });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
-    await service.terminate('lease-1', 'tenant relocating');
+    await service.terminate('lease-1', 'tenant relocating', makeUser({}));
 
     expect(prisma.tx.apartment.update).toHaveBeenCalledWith({
       where: { id: 'apt-1' },
@@ -168,13 +173,45 @@ describe('LeasesService.terminate', () => {
     });
   });
 
+  it('creates a move-out inspection task when the apartment is vacated', async () => {
+    const prisma = makePrisma();
+    prisma.client.lease.findFirst.mockResolvedValue({ id: 'lease-1', apartmentId: 'apt-1', ownerId: 'owner-1' });
+    prisma.tx.apartment.findFirst.mockResolvedValue({ id: 'apt-1', name: 'Ap 003', currentLeaseId: 'lease-1' });
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await service.terminate('lease-1', 'tenant relocating', makeUser({ id: 'pm-1' }));
+
+    expect(prisma.tx.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ownerId: 'owner-1',
+          apartmentId: 'apt-1',
+          kind: 'MOVE_OUT_INSPECTION',
+          assignedToRole: 'ADMIN',
+          createdById: 'pm-1',
+        }),
+      }),
+    );
+  });
+
+  it('does not create an inspection task when the apartment was not actually vacated', async () => {
+    const prisma = makePrisma();
+    prisma.client.lease.findFirst.mockResolvedValue({ id: 'lease-old', apartmentId: 'apt-1', ownerId: 'owner-1' });
+    prisma.tx.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: 'lease-new-current' });
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await service.terminate('lease-old', 'cleanup', makeUser({}));
+
+    expect(prisma.tx.task.create).not.toHaveBeenCalled();
+  });
+
   it('does NOT touch the apartment when terminating a lease that is no longer the current one (e.g. already superseded by a renewal)', async () => {
     const prisma = makePrisma();
     prisma.client.lease.findFirst.mockResolvedValue({ id: 'lease-old', apartmentId: 'apt-1' });
     prisma.tx.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: 'lease-new-current' });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
-    await service.terminate('lease-old', 'cleanup');
+    await service.terminate('lease-old', 'cleanup', makeUser({}));
 
     expect(prisma.tx.apartment.update).not.toHaveBeenCalled();
   });
@@ -183,9 +220,9 @@ describe('LeasesService.terminate', () => {
     const prisma = makePrisma();
     prisma.client.lease.findFirst.mockResolvedValue({ id: 'lease-1', apartmentId: 'apt-1' });
     prisma.tx.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: 'lease-1' });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
-    const result = await service.terminate('lease-1', 'non-payment');
+    const result = await service.terminate('lease-1', 'non-payment', makeUser({}));
 
     expect(result).toMatchObject({ status: 'TERMINATED', terminationReason: 'non-payment' });
   });
@@ -194,9 +231,9 @@ describe('LeasesService.terminate', () => {
     const prisma = makePrisma();
     prisma.client.lease.findFirst.mockResolvedValue({ id: 'lease-1', apartmentId: 'apt-1' });
     prisma.tx.apartment.findFirst.mockResolvedValue({ id: 'apt-1', currentLeaseId: 'lease-1' });
-    const service = new LeasesService(prisma as never, makePermissions() as never);
+    const service = new LeasesService(prisma as never, makePermissions() as never, makeNotifications() as never);
 
-    await service.terminate('lease-1', 'tenant relocating');
+    await service.terminate('lease-1', 'tenant relocating', makeUser({}));
 
     expect(prisma.tx.task.updateMany).toHaveBeenCalledWith({
       where: { leaseId: 'lease-1', status: { notIn: ['COMPLETED', 'CANCELLED'] } },

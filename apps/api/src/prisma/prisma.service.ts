@@ -25,6 +25,7 @@ const SOFT_DELETE_MODELS = new Set([
   'apartmentInvoice',
   'paymentConfirmation',
   'task',
+  'showing',
 ]);
 
 /**
@@ -44,6 +45,7 @@ const OWNER_SCOPED_MODELS = new Set([
   'apartmentInvoice',
   'paymentConfirmation',
   'task',
+  'showing',
 ]);
 
 function softDelete(client: PrismaClient) {

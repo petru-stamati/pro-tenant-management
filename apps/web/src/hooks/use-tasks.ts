@@ -4,6 +4,7 @@ import type { Paginated } from "@/lib/types";
 
 export type TaskStatus = "OPEN" | "IN_PROGRESS" | "ANSWERED" | "COMPLETED" | "CANCELLED";
 export type AssignedToRole = "ADMIN" | "OWNER";
+export type TaskKind = "GENERAL" | "LEASE_RENEWAL" | "LEASE_SIGNING" | "MOVE_OUT_INSPECTION";
 
 export interface TaskComment {
   id: string;
@@ -18,6 +19,7 @@ export interface Task {
   apartmentId: string | null;
   tenantId: string | null;
   leaseId: string | null;
+  kind: TaskKind;
   title: string;
   description: string;
   urgent: boolean;
@@ -62,6 +64,7 @@ export interface CreateTaskInput {
   ownerId?: string;
   apartmentId?: string;
   tenantId?: string;
+  kind?: TaskKind;
   title: string;
   description: string;
   urgent?: boolean;
@@ -89,6 +92,30 @@ export function useUpdateTask(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["tasks", "detail", id] });
+    },
+  });
+}
+
+export interface CompleteLeaseSigningInput {
+  startDate: string;
+  endDate: string;
+  rentAmountEUR: number;
+  rentVatIncluded?: boolean;
+  termMonths?: number;
+  autoRenewal?: boolean;
+  depositAmountEUR: number;
+}
+
+export function useCompleteLeaseSigning(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CompleteLeaseSigningInput) =>
+      apiFetch<{ id: string }>(`/tasks/${id}/complete-lease-signing`, { method: "POST", body: JSON.stringify(input) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks", "detail", id] });
+      queryClient.invalidateQueries({ queryKey: ["leases"] });
+      queryClient.invalidateQueries({ queryKey: ["apartments"] });
     },
   });
 }

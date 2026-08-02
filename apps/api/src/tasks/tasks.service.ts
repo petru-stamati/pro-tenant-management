@@ -2,18 +2,23 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { SystemRoleKey } from '@pro-tenant/db';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../common/permissions.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { paginate, skipTake } from '../common/pagination';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { ListTasksDto } from './dto/list-tasks.dto';
 import { CreateTaskCommentDto } from './dto/create-task-comment.dto';
+import { CompleteLeaseSigningDto } from './dto/complete-lease-signing.dto';
+
+const otherRole = (role: SystemRoleKey | null): SystemRoleKey => (role === 'ADMIN' ? 'OWNER' : 'ADMIN');
 
 @Injectable()
 export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(user: AuthenticatedUser, query: ListTasksDto) {
@@ -87,6 +92,7 @@ export class TasksService {
           apartmentId: lease.apartmentId,
           tenantId: lease.tenantId,
           leaseId: lease.id,
+          kind: 'LEASE_RENEWAL',
           title: `Lease renewal — ${lease.apartment.name}`,
           description: `The lease for ${tenantName} ${whenPhrase}. Upload the signed renewal addendum/extension, send it to the Owner to confirm, then mark this Completed to renew the lease.`,
           urgent: daysLeft < 0,
@@ -94,6 +100,14 @@ export class TasksService {
           createdById: user.id,
         },
       });
+      await this.notifications.notifyRole(
+        lease.ownerId,
+        'ADMIN',
+        'TASK_ASSIGNED',
+        'Lease renewal needed',
+        `The lease for ${lease.apartment.name} ${whenPhrase}.`,
+        'Task',
+      );
     }
   }
 
@@ -111,17 +125,30 @@ export class TasksService {
       assignedToRole = dto.assignedToRole ?? 'OWNER';
     }
 
+    const kind = dto.kind ?? 'GENERAL';
+    if (kind === 'LEASE_SIGNING') {
+      if (!dto.tenantId) throw new BadRequestException('tenantId is required for a lease-signing task');
+      // The PM always handles gathering documents first, regardless of who started it or what was passed.
+      assignedToRole = 'ADMIN';
+    }
+
     if (dto.apartmentId) {
       const apartment = await this.prisma.client.apartment.findFirst({ where: { id: dto.apartmentId } });
       if (!apartment) throw new BadRequestException('Apartment not found');
       if (apartment.ownerId !== ownerId) throw new BadRequestException('Apartment does not belong to this owner');
+      if (kind === 'LEASE_SIGNING' && apartment.currentLeaseId) {
+        throw new BadRequestException('Apartment already has an active lease — terminate it first');
+      }
+    } else if (kind === 'LEASE_SIGNING') {
+      throw new BadRequestException('apartmentId is required for a lease-signing task');
     }
 
-    return this.prisma.client.task.create({
+    const task = await this.prisma.client.task.create({
       data: {
         ownerId,
         apartmentId: dto.apartmentId,
         tenantId: dto.tenantId,
+        kind,
         title: dto.title,
         description: dto.description,
         urgent: dto.urgent ?? false,
@@ -129,11 +156,88 @@ export class TasksService {
         createdById: createdBy.id,
       },
     });
+    await this.notifications.notifyRole(ownerId, assignedToRole, 'TASK_ASSIGNED', task.title, dto.description, 'Task', task.id);
+    return task;
   }
 
   async update(user: AuthenticatedUser, id: string, dto: UpdateTaskDto) {
-    await this.assertExistsScoped(user, id);
-    return this.prisma.client.task.update({ where: { id }, data: dto });
+    const existing = await this.assertExistsScoped(user, id);
+    const task = await this.prisma.client.task.update({ where: { id }, data: dto });
+
+    if (dto.assignedToRole && dto.assignedToRole !== existing.assignedToRole) {
+      await this.notifications.notifyRole(task.ownerId, dto.assignedToRole, 'TASK_ASSIGNED', task.title, 'This task was sent to you.', 'Task', task.id);
+    }
+    if (dto.status === 'COMPLETED' && existing.status !== 'COMPLETED') {
+      await this.notifications.notifyRole(
+        task.ownerId,
+        otherRole(user.roleKey),
+        'TASK_COMPLETED',
+        task.title,
+        'This task was marked completed.',
+        'Task',
+        task.id,
+      );
+    }
+    return task;
+  }
+
+  /**
+   * Closes a LEASE_SIGNING task by actually creating the lease it was standing in
+   * for — apartment/tenant already live on the task from creation time, the lease
+   * terms are collected here instead, at the moment the signed contract comes back
+   * (mirrors the "complete = renew" flow for LEASE_RENEWAL tasks, but creates rather
+   * than renews). One transaction: create the ACTIVE lease, occupy the apartment,
+   * link leaseId back onto the task, and mark it COMPLETED.
+   */
+  async completeLeaseSigning(user: AuthenticatedUser, id: string, dto: CompleteLeaseSigningDto) {
+    const task = await this.assertExistsScoped(user, id);
+    if (task.kind !== 'LEASE_SIGNING') throw new BadRequestException('This task is not a lease-signing task');
+    if (task.status === 'COMPLETED' || task.status === 'CANCELLED') {
+      throw new BadRequestException('This task is already closed');
+    }
+    if (!task.apartmentId || !task.tenantId) {
+      throw new BadRequestException('This task is missing its apartment or tenant');
+    }
+
+    const apartment = await this.prisma.client.apartment.findFirst({ where: { id: task.apartmentId } });
+    if (!apartment) throw new BadRequestException('Apartment not found');
+    if (apartment.currentLeaseId) throw new BadRequestException('Apartment already has an active lease');
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const lease = await tx.lease.create({
+        data: {
+          apartmentId: task.apartmentId!,
+          ownerId: task.ownerId,
+          tenantId: task.tenantId!,
+          startDate: new Date(dto.startDate),
+          endDate: new Date(dto.endDate),
+          rentAmountEUR: dto.rentAmountEUR,
+          rentVatIncluded: dto.rentVatIncluded ?? true,
+          termMonths: dto.termMonths,
+          autoRenewal: dto.autoRenewal ?? false,
+          depositAmountEUR: dto.depositAmountEUR,
+          status: 'ACTIVE',
+          createdById: user.id,
+        },
+      });
+      await tx.apartment.update({
+        where: { id: apartment.id },
+        data: { currentLeaseId: lease.id, status: 'OCCUPIED' },
+      });
+      await tx.task.update({ where: { id: task.id }, data: { leaseId: lease.id, status: 'COMPLETED' } });
+      return lease;
+    }).then(async (lease) => {
+      await this.notifications.notifyRole(
+        task.ownerId,
+        otherRole(user.roleKey),
+        'TASK_COMPLETED',
+        task.title,
+        'The lease is signed and now active.',
+        'Lease',
+        lease.id,
+      );
+      return lease;
+    });
   }
 
   async createComment(user: AuthenticatedUser, id: string, dto: CreateTaskCommentDto) {

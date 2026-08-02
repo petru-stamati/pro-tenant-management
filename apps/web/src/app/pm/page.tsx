@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/lib/auth-context";
 import { useAdminSummary, useLeaseExpirations } from "@/hooks/use-analytics";
+import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -18,6 +19,7 @@ export default function PmDashboardPage() {
   const { user } = useAuth();
   const { data: summary, isLoading: summaryLoading } = useAdminSummary();
   const { data: expirations, isLoading: expirationsLoading } = useLeaseExpirations(90);
+  const { data: notifications } = useNotifications();
 
   const maxOwnerRevenue = Math.max(1, ...(summary?.revenueByOwner.map((o) => o.monthlyRevenueEUR) ?? [1]));
 
@@ -60,28 +62,45 @@ export default function PmDashboardPage() {
         <NeedsAttentionPanel role="PM" />
       </div>
 
-      <div className="mb-6 rounded-[14px] border border-border bg-card p-5 shadow-sm">
-        <h3 className="mb-3.5 text-[14.5px] font-semibold">Revenue by owner (EUR / month)</h3>
-        {summary?.revenueByOwner.length ? (
-          <div className="flex flex-col gap-4">
-            {summary.revenueByOwner.map((o) => (
-              <div key={o.ownerId}>
-                <div className="mb-1.5 flex justify-between text-[13px]">
-                  <span>{o.ownerName}</span>
-                  <span className="font-mono-tabular font-mono">€{o.monthlyRevenueEUR.toLocaleString()}</span>
+      <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
+        <div className="rounded-[14px] border border-border bg-card p-5 shadow-sm">
+          <h3 className="mb-3.5 text-[14.5px] font-semibold">Revenue by owner (EUR / month)</h3>
+          {summary?.revenueByOwner.length ? (
+            <div className="flex flex-col gap-4">
+              {summary.revenueByOwner.map((o) => (
+                <div key={o.ownerId}>
+                  <div className="mb-1.5 flex justify-between text-[13px]">
+                    <span>{o.ownerName}</span>
+                    <span className="font-mono-tabular font-mono">€{o.monthlyRevenueEUR.toLocaleString()}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${(o.monthlyRevenueEUR / maxOwnerRevenue) * 100}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2 rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${(o.monthlyRevenueEUR / maxOwnerRevenue) * 100}%` }}
-                  />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No active leases yet.</p>
+          )}
+        </div>
+
+        <div className="rounded-[14px] border border-border bg-card p-5 shadow-sm">
+          <h3 className="mb-3.5 text-[14.5px] font-semibold">Notifications</h3>
+          {notifications && notifications.data.length > 0 ? (
+            <div className="flex flex-col divide-y divide-border">
+              {notifications.data.map((n) => (
+                <div key={n.id} className="py-2.5 text-[13px]">
+                  {n.title}
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">No active leases yet.</p>
-        )}
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Nothing new.</p>
+          )}
+        </div>
       </div>
 
       <div className="rounded-[14px] border border-border bg-card p-5 shadow-sm">

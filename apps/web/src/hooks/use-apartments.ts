@@ -9,7 +9,7 @@ export interface ApartmentSummary {
   addressLine: string;
   city: string;
   sector: string | null;
-  status: "VACANT" | "OCCUPIED";
+  status: "VACANT" | "OCCUPIED" | "UNDER_MAINTENANCE";
   currentLeaseId: string | null;
   currentLease: {
     id: string;
@@ -62,6 +62,7 @@ export interface ApartmentInput {
   surfaceM2?: number;
   rooms?: string;
   furnished?: string;
+  status?: "VACANT" | "OCCUPIED" | "UNDER_MAINTENANCE";
 }
 
 export function useCreateApartment() {

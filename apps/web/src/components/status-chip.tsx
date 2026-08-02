@@ -17,8 +17,18 @@ export function StatusChip({ tone, children }: { tone: keyof typeof TONES; child
   );
 }
 
-export function apartmentStatusTone(status: "VACANT" | "OCCUPIED"): keyof typeof TONES {
-  return status === "OCCUPIED" ? "paid" : "open";
+export type ApartmentStatusValue = "VACANT" | "OCCUPIED" | "UNDER_MAINTENANCE";
+
+export function apartmentStatusTone(status: ApartmentStatusValue): keyof typeof TONES {
+  if (status === "OCCUPIED") return "paid";
+  if (status === "UNDER_MAINTENANCE") return "partial";
+  return "open";
+}
+
+export function apartmentStatusLabel(status: ApartmentStatusValue): string {
+  if (status === "OCCUPIED") return "Occupied";
+  if (status === "UNDER_MAINTENANCE") return "Under maintenance";
+  return "Vacant";
 }
 
 export function paymentStatusTone(status: "PAID" | "PARTIALLY_PAID" | "UNPAID" | "LATE"): keyof typeof TONES {

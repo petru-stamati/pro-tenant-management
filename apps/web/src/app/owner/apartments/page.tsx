@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useApartments } from "@/hooks/use-apartments";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
+import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
 import { formatEUR } from "@/lib/format";
 
 export default function OwnerApartmentsPage() {
@@ -45,9 +45,7 @@ export default function OwnerApartmentsPage() {
                     {a.currentLease ? formatEUR(a.currentLease.rentAmountEUR) : "—"}
                   </TableCell>
                   <TableCell>
-                    <StatusChip tone={apartmentStatusTone(a.status)}>
-                      {a.status === "OCCUPIED" ? "Occupied" : "Vacant"}
-                    </StatusChip>
+                    <StatusChip tone={apartmentStatusTone(a.status)}>{apartmentStatusLabel(a.status)}</StatusChip>
                   </TableCell>
                 </TableRow>
               ))}

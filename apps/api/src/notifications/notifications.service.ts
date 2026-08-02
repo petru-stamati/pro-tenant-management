@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { NotificationType } from '@pro-tenant/db';
+import { NotificationType, SystemRoleKey } from '@pro-tenant/db';
 import { PrismaService } from '../prisma/prisma.service';
 import { paginate, skipTake } from '../common/pagination';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
@@ -61,5 +61,28 @@ export class NotificationsService {
     return this.prisma.client.notification.create({
       data: { userId, type, title, body, entityType, entityId },
     });
+  }
+
+  /**
+   * Notifies whoever holds a role rather than a specific user — ADMIN means
+   * every PM staff login, OWNER means the one login for that owner company
+   * (see Task.assignedToRole doc comment: same "whose turn" concept, not a
+   * specific person). Silently notifies nobody if that owner has no linked
+   * User yet, rather than failing the caller's action over it.
+   */
+  async notifyRole(
+    ownerId: string,
+    role: SystemRoleKey,
+    type: NotificationType,
+    title: string,
+    body: string,
+    entityType?: string,
+    entityId?: string,
+  ) {
+    const users =
+      role === 'ADMIN'
+        ? await this.prisma.client.user.findMany({ where: { role: { key: 'ADMIN' } } })
+        : await this.prisma.client.user.findMany({ where: { ownerId } });
+    await Promise.all(users.map((u) => this.create(u.id, type, title, body, entityType, entityId)));
   }
 }

@@ -39,6 +39,8 @@ const PERMISSIONS: Record<string, string> = {
   'maintenance:comment': 'Comment on requests/proposals',
   'tasks:read': 'View the Tasks inbox',
   'tasks:write': 'Create tasks, comment, change status, upload attachments',
+  'showings:read': 'View logged apartment showings',
+  'showings:write': 'Log a showing',
   'notes:read': 'View internal notes',
   'notes:write': 'Create internal notes',
   'analytics:read': 'Own-portfolio KPIs',
@@ -62,6 +64,8 @@ const OWNER_BUNDLE = [
   'maintenance:comment',
   'tasks:read',
   'tasks:write',
+  'showings:read',
+  'showings:write',
   'analytics:read',
 ];
 
