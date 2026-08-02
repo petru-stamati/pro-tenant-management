@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  useTasks,
   useTask,
   useCreateTask,
   useUpdateTask,
@@ -14,7 +13,7 @@ import {
   type TaskStatus,
 } from "@/hooks/use-tasks";
 import { useRenewLease } from "@/hooks/use-leases";
-import { useMaintenanceRequests, type MaintenanceRequestSummary, type MaintenanceStatus } from "@/hooks/use-maintenance";
+import { useOpenItems, TASK_STATUS_LABEL, type UnifiedItem } from "@/hooks/use-open-items";
 import { useApartments } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
 import { useAuth } from "@/lib/auth-context";
@@ -30,121 +29,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusChip } from "@/components/status-chip";
 import { dateFormatter } from "@/lib/format";
 
-const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-  OPEN: "Open",
-  IN_PROGRESS: "In progress",
-  ANSWERED: "Answered",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-};
-const TASK_STATUS_TONE: Record<TaskStatus, "open" | "progress" | "done" | "unpaid"> = {
-  OPEN: "open",
-  IN_PROGRESS: "progress",
-  ANSWERED: "progress",
-  COMPLETED: "done",
-  CANCELLED: "unpaid",
-};
-
-const MAINTENANCE_STATUS_LABEL: Record<MaintenanceStatus, string> = {
-  REPORTED: "Reported",
-  TRIAGED: "Inspected",
-  PROPOSAL_CREATED: "Quote proposed",
-  PENDING_OWNER_APPROVAL: "Waiting on owner",
-  IN_PROGRESS: "In progress",
-  REPAIRED: "Repaired",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled",
-};
-const MAINTENANCE_STATUS_TONE: Record<MaintenanceStatus, "open" | "progress" | "done" | "unpaid"> = {
-  REPORTED: "open",
-  TRIAGED: "open",
-  PROPOSAL_CREATED: "progress",
-  PENDING_OWNER_APPROVAL: "progress",
-  IN_PROGRESS: "progress",
-  REPAIRED: "progress",
-  COMPLETED: "done",
-  CANCELLED: "unpaid",
-};
-
-const OPEN_TASK_STATUSES: TaskStatus[] = ["OPEN", "IN_PROGRESS", "ANSWERED"];
-const OPEN_MAINTENANCE_STATUSES: MaintenanceStatus[] = [
-  "REPORTED",
-  "TRIAGED",
-  "PROPOSAL_CREATED",
-  "PENDING_OWNER_APPROVAL",
-  "IN_PROGRESS",
-  "REPAIRED",
-];
-
-interface UnifiedItem {
-  kind: "task" | "maintenance";
-  id: string;
-  title: string;
-  urgent: boolean;
-  statusLabel: string;
-  statusTone: "open" | "progress" | "done" | "unpaid";
-  apartmentName: string | null;
-  ownerId: string | null;
-  waitingOn: "Owner" | "PM" | null;
-  createdAt: string;
-  task?: Task;
-}
-
 export function TasksBoard({ role }: { role: "PM" | "OWNER" }) {
   const router = useRouter();
   const [showClosed, setShowClosed] = useState(false);
-  const { data: tasksData, isLoading: tasksLoading } = useTasks();
-  const { data: maintenanceData, isLoading: maintenanceLoading } = useMaintenanceRequests();
+  const { items: allItems, openItems, isLoading } = useOpenItems(role);
   const { data: owners } = useOwners();
   const [openTask, setOpenTask] = useState<Task | null>(null);
 
-  const items = useMemo<UnifiedItem[]>(() => {
-    const taskItems: UnifiedItem[] = (tasksData?.data ?? []).map((t) => ({
-      kind: "task",
-      id: t.id,
-      title: t.title,
-      urgent: t.urgent,
-      statusLabel: TASK_STATUS_LABEL[t.status],
-      statusTone: TASK_STATUS_TONE[t.status],
-      apartmentName: t.apartment?.name ?? null,
-      ownerId: t.apartment?.ownerId ?? t.ownerId,
-      waitingOn: t.status === "COMPLETED" || t.status === "CANCELLED" ? null : t.assignedToRole === "ADMIN" ? "PM" : "Owner",
-      createdAt: t.createdAt,
-      task: t,
-    }));
-    const maintenanceItems: UnifiedItem[] = (maintenanceData?.data ?? []).map((m: MaintenanceRequestSummary) => ({
-      kind: "maintenance",
-      id: m.id,
-      title: m.title,
-      urgent: m.urgent,
-      statusLabel: MAINTENANCE_STATUS_LABEL[m.status],
-      statusTone: MAINTENANCE_STATUS_TONE[m.status],
-      apartmentName: m.apartment?.name ?? null,
-      ownerId: m.apartment?.ownerId ?? null,
-      waitingOn:
-        m.status === "COMPLETED" || m.status === "CANCELLED" ? null : m.status === "PENDING_OWNER_APPROVAL" ? "Owner" : "PM",
-      createdAt: m.createdAt,
-    }));
-
-    const maintenanceStatusById = new Map((maintenanceData?.data ?? []).map((m) => [m.id, m.status]));
-    const merged = [...taskItems, ...maintenanceItems].filter((item) => {
-      if (showClosed) return true;
-      if (item.kind === "task") return OPEN_TASK_STATUSES.includes(item.task!.status);
-      return OPEN_MAINTENANCE_STATUSES.includes(maintenanceStatusById.get(item.id) as MaintenanceStatus);
-    });
-
-    return merged.sort((a, b) => {
-      if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-  }, [tasksData, maintenanceData, showClosed]);
+  const items = showClosed ? allItems : openItems;
 
   const ownerName = (ownerId: string | null) => owners?.data.find((o) => o.id === ownerId)?.companyName ?? "—";
-  const isLoading = tasksLoading || maintenanceLoading;
 
   function handleRowClick(item: UnifiedItem) {
     if (item.kind === "maintenance") {
-      router.push(role === "PM" ? `/pm/maintenance/${item.id}` : `/owner/maintenance/${item.id}`);
+      router.push(item.href);
     } else {
       setOpenTask(item.task ?? null);
     }

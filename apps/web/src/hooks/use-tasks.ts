@@ -38,13 +38,15 @@ export interface Task {
   } | null;
 }
 
-export function useTasks(params: { apartmentId?: string; status?: string } = {}) {
+export function useTasks(params: { apartmentId?: string; status?: string; enabled?: boolean } = {}) {
+  const { enabled = true, ...filters } = params;
   const query = new URLSearchParams({ pageSize: "100" });
-  if (params.apartmentId) query.set("apartmentId", params.apartmentId);
-  if (params.status) query.set("status", params.status);
+  if (filters.apartmentId) query.set("apartmentId", filters.apartmentId);
+  if (filters.status) query.set("status", filters.status);
   return useQuery({
-    queryKey: ["tasks", params],
+    queryKey: ["tasks", filters],
     queryFn: () => apiFetch<Paginated<Task>>(`/tasks?${query.toString()}`),
+    enabled,
   });
 }
 

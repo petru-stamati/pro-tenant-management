@@ -3,6 +3,7 @@
 import { useAuth } from "@/lib/auth-context";
 import { useAdminSummary, useLeaseExpirations } from "@/hooks/use-analytics";
 import { KpiCard } from "@/components/kpi-card";
+import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatRON } from "@/lib/format";
@@ -53,6 +54,10 @@ export default function PmDashboardPage() {
           label="Open Maintenance"
           value={summaryLoading ? "…" : String(summary?.openMaintenanceCount ?? 0)}
         />
+      </div>
+
+      <div className="mb-6">
+        <NeedsAttentionPanel role="PM" />
       </div>
 
       <div className="mb-6 rounded-[14px] border border-border bg-card p-5 shadow-sm">

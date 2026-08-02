@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useLatestExchangeRate } from "@/hooks/use-exchange-rate";
+import { useOpenItems } from "@/hooks/use-open-items";
 import { cn } from "@/lib/utils";
 
 function ExchangeRateWidget() {
@@ -53,6 +54,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
+  const { openCount } = useOpenItems(user?.role === "OWNER" ? "OWNER" : "PM");
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
@@ -93,18 +95,24 @@ export function AppShell({
           )}
           {section.items.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isTasksLink = item.href.endsWith("/tasks");
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "block rounded-[9px] border-l-[3px] px-3 py-2.5 text-[13.5px] font-medium transition-colors",
+                  "flex items-center justify-between rounded-[9px] border-l-[3px] px-3 py-2.5 text-[13.5px] font-medium transition-colors",
                   active
                     ? "border-primary bg-sidebar-accent text-white"
                     : "border-transparent text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-white",
                 )}
               >
-                {item.label}
+                <span>{item.label}</span>
+                {isTasksLink && openCount > 0 && (
+                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10.5px] font-semibold leading-none text-primary-foreground">
+                    {openCount > 99 ? "99+" : openCount}
+                  </span>
+                )}
               </Link>
             );
           })}

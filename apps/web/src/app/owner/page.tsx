@@ -5,6 +5,7 @@ import { useOwnerSummary } from "@/hooks/use-analytics";
 import { useApartments } from "@/hooks/use-apartments";
 import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
+import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusChip, apartmentStatusTone } from "@/components/status-chip";
 import { formatEUR, formatRON } from "@/lib/format";
@@ -94,19 +95,23 @@ export default function OwnerDashboardPage() {
           )}
         </div>
 
-        <div className="rounded-[14px] border border-border bg-card p-5 shadow-sm">
-          <h3 className="mb-3.5 text-[14.5px] font-semibold">Notifications</h3>
-          {notifications && notifications.data.length > 0 ? (
-            <div className="flex flex-col divide-y divide-border">
-              {notifications.data.map((n) => (
-                <div key={n.id} className="py-2.5 text-[13px]">
-                  {n.title}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Nothing new.</p>
-          )}
+        <div className="flex flex-col gap-4">
+          <NeedsAttentionPanel role="OWNER" />
+
+          <div className="rounded-[14px] border border-border bg-card p-5 shadow-sm">
+            <h3 className="mb-3.5 text-[14.5px] font-semibold">Notifications</h3>
+            {notifications && notifications.data.length > 0 ? (
+              <div className="flex flex-col divide-y divide-border">
+                {notifications.data.map((n) => (
+                  <div key={n.id} className="py-2.5 text-[13px]">
+                    {n.title}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Nothing new.</p>
+            )}
+          </div>
         </div>
       </div>
     </div>

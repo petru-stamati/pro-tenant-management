@@ -55,13 +55,15 @@ export interface MaintenanceComment {
   authorId: string;
 }
 
-export function useMaintenanceRequests(params: { apartmentId?: string; status?: string } = {}) {
+export function useMaintenanceRequests(params: { apartmentId?: string; status?: string; enabled?: boolean } = {}) {
+  const { enabled = true, ...filters } = params;
   const query = new URLSearchParams({ pageSize: "50" });
-  if (params.apartmentId) query.set("apartmentId", params.apartmentId);
-  if (params.status) query.set("status", params.status);
+  if (filters.apartmentId) query.set("apartmentId", filters.apartmentId);
+  if (filters.status) query.set("status", filters.status);
   return useQuery({
-    queryKey: ["maintenance-requests", params],
+    queryKey: ["maintenance-requests", filters],
     queryFn: () => apiFetch<Paginated<MaintenanceRequestSummary>>(`/maintenance-requests?${query.toString()}`),
+    enabled,
   });
 }
 
