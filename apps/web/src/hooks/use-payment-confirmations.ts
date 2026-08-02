@@ -15,12 +15,15 @@ export interface PaymentConfirmationDocument {
   fileName: string;
 }
 
+export type PaymentMethod = "CASH" | "BANK_TRANSFER";
+
 export interface PaymentConfirmation {
   id: string;
   apartmentId: string;
   ownerId: string;
   totalAmountRON: string;
   paymentDate: string;
+  paymentMethod: PaymentMethod;
   notes: string | null;
   applications: PaymentApplication[];
   documents?: PaymentConfirmationDocument[];
@@ -44,6 +47,7 @@ export interface PaymentApplicationInput {
 export interface CreatePaymentConfirmationInput {
   apartmentId: string;
   paymentDate: string;
+  paymentMethod: PaymentMethod;
   notes?: string;
   applications: PaymentApplicationInput[];
 }
@@ -57,6 +61,7 @@ export function useCreatePaymentConfirmation() {
       queryClient.invalidateQueries({ queryKey: ["payment-confirmations"] });
       queryClient.invalidateQueries({ queryKey: ["apartment-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 }

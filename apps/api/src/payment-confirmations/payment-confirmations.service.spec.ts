@@ -33,6 +33,9 @@ function makePrisma(invoices: Record<string, ReturnType<typeof makeInvoice>>) {
       create: jest.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'pc-1', ...args.data })),
       delete: jest.fn(async () => ({ success: true })),
     },
+    task: {
+      create: jest.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'task-1', ...args.data })),
+    },
   };
   return {
     client: {
@@ -130,6 +133,49 @@ describe('PaymentConfirmationsService.create', () => {
     );
 
     expect(prisma.store.inv).toMatchObject({ paidAmountRON: 300, outstandingAmountRON: 200, status: 'PARTIALLY_PAID' });
+  });
+
+  it('creates a "hand over cash" task assigned to the PM when paymentMethod is CASH', async () => {
+    const prisma = makePrisma({ inv: makeInvoice({ totalAmountRON: 500, outstandingAmountRON: 500 }) });
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    await service.create(
+      {
+        apartmentId: 'apt-1',
+        paymentDate: '2026-07-31',
+        paymentMethod: 'CASH',
+        applications: [{ invoiceId: 'inv', amountRON: 500 }],
+      } as never,
+      makeUser({}),
+    );
+
+    expect(prisma.tx.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          ownerId: 'owner-1',
+          apartmentId: 'apt-1',
+          paymentConfirmationId: 'pc-1',
+          assignedToRole: 'ADMIN',
+        }),
+      }),
+    );
+  });
+
+  it('does not create a task when paymentMethod is BANK_TRANSFER', async () => {
+    const prisma = makePrisma({ inv: makeInvoice({ totalAmountRON: 500, outstandingAmountRON: 500 }) });
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    await service.create(
+      {
+        apartmentId: 'apt-1',
+        paymentDate: '2026-07-31',
+        paymentMethod: 'BANK_TRANSFER',
+        applications: [{ invoiceId: 'inv', amountRON: 500 }],
+      } as never,
+      makeUser({}),
+    );
+
+    expect(prisma.tx.task.create).not.toHaveBeenCalled();
   });
 });
 

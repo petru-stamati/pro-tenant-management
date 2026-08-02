@@ -9,7 +9,7 @@ import {
   type ApartmentInvoice,
   type ApartmentInvoiceType,
 } from "@/hooks/use-apartment-invoices";
-import { useCreatePaymentConfirmation } from "@/hooks/use-payment-confirmations";
+import { useCreatePaymentConfirmation, type PaymentMethod } from "@/hooks/use-payment-confirmations";
 import { useApartments } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
 import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
@@ -466,6 +466,7 @@ function RecordPaymentDialog({
   const createPayment = useCreatePaymentConfirmation();
   const upload = useUploadDocument();
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("BANK_TRANSFER");
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ApplicationDraft>>({});
@@ -510,13 +511,23 @@ function RecordPaymentDialog({
       setError("Select at least one invoice this payment covers.");
       return;
     }
+    if (paymentMethod === "BANK_TRANSFER" && !file) {
+      setError("Upload the proof of transfer (OP) for a bank transfer payment.");
+      return;
+    }
 
     try {
-      const confirmation = await createPayment.mutateAsync({ apartmentId, paymentDate, notes: notes || undefined, applications });
+      const confirmation = await createPayment.mutateAsync({
+        apartmentId,
+        paymentDate,
+        paymentMethod,
+        notes: notes || undefined,
+        applications,
+      });
       if (file) {
         await upload.mutateAsync({ file, category: "RECEIPT", paymentConfirmationId: confirmation.id });
       }
-      toast.success("Payment recorded");
+      toast.success(paymentMethod === "CASH" ? "Payment recorded — task created to hand over cash to the Owner" : "Payment recorded");
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -538,10 +549,35 @@ function RecordPaymentDialog({
               <Input type="date" required value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Payment confirmation — optional</Label>
-              <Input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <Label>How was it paid?</Label>
+              <Select
+                value={paymentMethod}
+                onValueChange={(v) => {
+                  setPaymentMethod((v as PaymentMethod) ?? "BANK_TRANSFER");
+                  setFile(null);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BANK_TRANSFER">Bank transfer</SelectItem>
+                  <SelectItem value="CASH">Cash — collected by me</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+
+          {paymentMethod === "BANK_TRANSFER" ? (
+            <div className="flex flex-col gap-2">
+              <Label>Proof of transfer (OP)</Label>
+              <Input type="file" accept="image/*,application/pdf" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            </div>
+          ) : (
+            <p className="rounded-md bg-accent/40 px-3 py-2 text-[12.5px] text-muted-foreground">
+              A task will be created to hand this cash over to the Owner — it'll show up in both your Tasks tab and theirs.
+            </p>
+          )}
 
           <div className="flex flex-col gap-2">
             <Label>Apply to invoices</Label>

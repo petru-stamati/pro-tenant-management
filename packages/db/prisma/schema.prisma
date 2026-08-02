@@ -760,6 +760,11 @@ model ApartmentInvoice {
   @@index([deletedAt])
 }
 
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+}
+
 /// One uploaded (or manually logged) payment. May cover one invoice fully,
 /// several invoices at once, or only part of one — see PaymentApplication.
 model PaymentConfirmation {
@@ -770,11 +775,17 @@ model PaymentConfirmation {
   apartment Apartment @relation(fields: [apartmentId], references: [id])
   owner     Owner     @relation(fields: [ownerId], references: [id])
 
-  totalAmountRON Decimal  @db.Decimal(10, 2)
-  paymentDate    DateTime @db.Date
+  totalAmountRON Decimal       @db.Decimal(10, 2)
+  paymentDate    DateTime      @db.Date
+  /// CASH means the PM physically collected it from the tenant — creates a
+  /// linked Task so it's tracked until handed over to the Owner. BANK_TRANSFER
+  /// expects a proof-of-transfer (OP) document instead. Existing rows predate
+  /// this field and were all bank transfers, hence the default.
+  paymentMethod  PaymentMethod @default(BANK_TRANSFER)
   notes          String?
 
   documents Document[]
+  tasks     Task[]
 
   recordedById String
   recordedBy   User   @relation("PaymentConfirmationRecordedBy", fields: [recordedById], references: [id])
@@ -963,11 +974,16 @@ model Task {
   /// Set only for system-generated lease-renewal tasks (see TasksService.syncLeaseRenewalTasks) —
   /// lets the UI offer a "complete = renew this lease" flow and lets renew()/terminate() auto-close it.
   leaseId     String?
+  /// Set only for the "hand over cash to the Owner" task auto-created when a
+  /// PaymentConfirmation is logged with paymentMethod CASH (see
+  /// PaymentConfirmationsService.create).
+  paymentConfirmationId String?
 
-  owner     Owner      @relation(fields: [ownerId], references: [id])
-  apartment Apartment? @relation(fields: [apartmentId], references: [id])
-  tenant    Tenant?    @relation(fields: [tenantId], references: [id])
-  lease     Lease?     @relation(fields: [leaseId], references: [id])
+  owner               Owner                @relation(fields: [ownerId], references: [id])
+  apartment           Apartment?           @relation(fields: [apartmentId], references: [id])
+  tenant              Tenant?              @relation(fields: [tenantId], references: [id])
+  lease               Lease?               @relation(fields: [leaseId], references: [id])
+  paymentConfirmation PaymentConfirmation? @relation(fields: [paymentConfirmationId], references: [id])
 
   title          String
   description    String
@@ -992,6 +1008,7 @@ model Task {
   @@index([ownerId])
   @@index([apartmentId])
   @@index([leaseId])
+  @@index([paymentConfirmationId])
   @@index([status])
   @@index([deletedAt])
 }

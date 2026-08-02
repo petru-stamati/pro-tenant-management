@@ -88,12 +88,30 @@ export class PaymentConfirmationsService {
           ownerId: apartment.ownerId,
           totalAmountRON,
           paymentDate: new Date(dto.paymentDate),
+          paymentMethod: dto.paymentMethod,
           notes: dto.notes,
           recordedById: recordedBy.id,
           applications: { create: resolvedApplications },
         },
         include: { applications: { include: { invoice: true } } },
       });
+
+      // Cash never reaches the Owner's bank account by itself — track it as a
+      // task until the PM hands it over, visible in both the PM's and the
+      // Owner's Tasks tab (same owner-scoping every other task uses).
+      if (dto.paymentMethod === 'CASH') {
+        await tx.task.create({
+          data: {
+            ownerId: apartment.ownerId,
+            apartmentId: apartment.id,
+            paymentConfirmationId: confirmation.id,
+            title: `Hand over ${totalAmountRON} RON cash — ${apartment.name}`,
+            description: `Collected in cash from the tenant on ${dto.paymentDate}. Hand this over to the Owner and mark this task Completed once done.`,
+            assignedToRole: 'ADMIN',
+            createdById: recordedBy.id,
+          },
+        });
+      }
 
       return confirmation;
     });

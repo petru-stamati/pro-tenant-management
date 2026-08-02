@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -11,6 +12,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { PaymentMethod } from '@pro-tenant/db';
 
 export class PaymentApplicationInputDto {
   @IsString()
@@ -39,6 +41,9 @@ export class CreatePaymentConfirmationDto {
 
   @IsDateString()
   paymentDate!: string;
+
+  @IsEnum(PaymentMethod)
+  paymentMethod!: PaymentMethod;
 
   @IsOptional()
   @IsString()
