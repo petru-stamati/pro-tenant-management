@@ -15,15 +15,26 @@ function makeInvoice(overrides: Record<string, unknown> = {}) {
     paidAmountRON: 0,
     outstandingAmountRON: 1000,
     status: 'UNPAID',
+    periodMonth: '2026-07-01',
     ...overrides,
   };
 }
 
-function makePrisma(invoices: Record<string, ReturnType<typeof makeInvoice>>) {
+function makePrisma(
+  invoices: Record<string, ReturnType<typeof makeInvoice>>,
+  apartmentOverrides: Record<string, unknown> = {},
+) {
   const store = { ...invoices };
+  const apartment = { id: 'apt-1', ownerId: 'owner-1', name: 'Apt 1', creditBalanceRON: 0, ...apartmentOverrides };
   const tx = {
     apartmentInvoice: {
       findFirst: jest.fn(async (args: { where: { id: string } }) => store[args.where.id] ?? null),
+      findMany: jest.fn(async (args: { where: { apartmentId: string; status?: { in: string[] } } }) =>
+        Object.values(store)
+          .filter((inv) => inv.apartmentId === args.where.apartmentId)
+          .filter((inv) => !args.where.status || args.where.status.in.includes(inv.status as string))
+          .sort((a, b) => String(a.periodMonth).localeCompare(String(b.periodMonth))),
+      ),
       update: jest.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => {
         store[args.where.id] = { ...store[args.where.id], ...args.data };
         return store[args.where.id];
@@ -33,18 +44,32 @@ function makePrisma(invoices: Record<string, ReturnType<typeof makeInvoice>>) {
       create: jest.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'pc-1', ...args.data })),
       delete: jest.fn(async () => ({ success: true })),
     },
+    apartment: {
+      findFirst: jest.fn(async () => apartment),
+      update: jest.fn(async (args: { data: Record<string, unknown> }) => {
+        const data = args.data as { creditBalanceRON?: { increment?: number; decrement?: number } };
+        if (data.creditBalanceRON?.increment !== undefined) {
+          apartment.creditBalanceRON += data.creditBalanceRON.increment;
+        }
+        if (data.creditBalanceRON?.decrement !== undefined) {
+          apartment.creditBalanceRON -= data.creditBalanceRON.decrement;
+        }
+        return apartment;
+      }),
+    },
     task: {
       create: jest.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'task-1', ...args.data })),
     },
   };
   return {
     client: {
-      apartment: { findFirst: jest.fn().mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' }) },
+      apartment: { findFirst: jest.fn().mockResolvedValue(apartment) },
       $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     forOwnerScope: jest.fn(),
     tx,
     store,
+    apartment,
   };
 }
 
@@ -177,6 +202,80 @@ describe('PaymentConfirmationsService.create', () => {
 
     expect(prisma.tx.task.create).not.toHaveBeenCalled();
   });
+
+  it('rejects when both applications and autoApplyAmountRON are provided', async () => {
+    const prisma = makePrisma({ inv: makeInvoice() });
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    await expect(
+      service.create(
+        {
+          apartmentId: 'apt-1',
+          paymentDate: '2026-07-31',
+          applications: [{ invoiceId: 'inv', amountRON: 100 }],
+          autoApplyAmountRON: 100,
+        } as never,
+        makeUser({}),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects when neither applications nor autoApplyAmountRON are provided', async () => {
+    const prisma = makePrisma({ inv: makeInvoice() });
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    await expect(
+      service.create({ apartmentId: 'apt-1', paymentDate: '2026-07-31' } as never, makeUser({})),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('auto-applies a lump sum oldest-first across outstanding invoices', async () => {
+    const prisma = makePrisma({
+      jun: makeInvoice({ id: 'jun', periodMonth: '2026-06-01', totalAmountRON: 500, outstandingAmountRON: 500 }),
+      jul: makeInvoice({ id: 'jul', periodMonth: '2026-07-01', totalAmountRON: 1000, outstandingAmountRON: 1000 }),
+    });
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    const result = await service.create(
+      { apartmentId: 'apt-1', paymentDate: '2026-07-31', autoApplyAmountRON: 800 } as never,
+      makeUser({}),
+    );
+
+    expect((result as { totalAmountRON: number }).totalAmountRON).toBe(800);
+    expect(prisma.store.jun).toMatchObject({ paidAmountRON: 500, outstandingAmountRON: 0, status: 'PAID' });
+    expect(prisma.store.jul).toMatchObject({ paidAmountRON: 300, outstandingAmountRON: 700, status: 'PARTIALLY_PAID' });
+    expect(prisma.apartment.creditBalanceRON).toBe(0);
+  });
+
+  it('carries the remainder as apartment credit when auto-apply amount exceeds all outstanding invoices', async () => {
+    const prisma = makePrisma({
+      jun: makeInvoice({ id: 'jun', periodMonth: '2026-06-01', totalAmountRON: 500, outstandingAmountRON: 500 }),
+    });
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    const result = await service.create(
+      { apartmentId: 'apt-1', paymentDate: '2026-07-31', autoApplyAmountRON: 800 } as never,
+      makeUser({}),
+    );
+
+    expect((result as { totalAmountRON: number; creditContributionRON: number }).totalAmountRON).toBe(800);
+    expect((result as { creditContributionRON: number }).creditContributionRON).toBe(300);
+    expect(prisma.store.jun).toMatchObject({ paidAmountRON: 500, outstandingAmountRON: 0, status: 'PAID' });
+    expect(prisma.apartment.creditBalanceRON).toBe(300);
+  });
+
+  it('carries the full amount as credit when there are no outstanding invoices at all', async () => {
+    const prisma = makePrisma({});
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    const result = await service.create(
+      { apartmentId: 'apt-1', paymentDate: '2026-07-31', autoApplyAmountRON: 400 } as never,
+      makeUser({}),
+    );
+
+    expect((result as { totalAmountRON: number }).totalAmountRON).toBe(400);
+    expect(prisma.apartment.creditBalanceRON).toBe(400);
+  });
 });
 
 describe('PaymentConfirmationsService.remove', () => {
@@ -193,5 +292,49 @@ describe('PaymentConfirmationsService.remove', () => {
     await service.remove('pc-1');
 
     expect(prisma.store.inv).toMatchObject({ paidAmountRON: 0, outstandingAmountRON: 500, status: 'UNPAID' });
+  });
+
+  it('gives back credit consumed by a deleted CREDIT-method confirmation', async () => {
+    const prisma = makePrisma(
+      { inv: makeInvoice({ totalAmountRON: 500, paidAmountRON: 300, outstandingAmountRON: 200, status: 'PARTIALLY_PAID' }) },
+      { creditBalanceRON: 0 },
+    );
+    (prisma.client as unknown as { paymentConfirmation: { findFirst: jest.Mock } }).paymentConfirmation = {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'pc-1',
+        apartmentId: 'apt-1',
+        paymentMethod: 'CREDIT',
+        totalAmountRON: 300,
+        creditContributionRON: 0,
+        applications: [{ invoiceId: 'inv', amountRON: 300 }],
+      }),
+    };
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    await service.remove('pc-1');
+
+    expect(prisma.apartment.creditBalanceRON).toBe(300);
+  });
+
+  it('takes back credit created by a deleted overpayment confirmation', async () => {
+    const prisma = makePrisma(
+      { inv: makeInvoice({ totalAmountRON: 500, paidAmountRON: 500, outstandingAmountRON: 0, status: 'PAID' }) },
+      { creditBalanceRON: 300 },
+    );
+    (prisma.client as unknown as { paymentConfirmation: { findFirst: jest.Mock } }).paymentConfirmation = {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'pc-1',
+        apartmentId: 'apt-1',
+        paymentMethod: 'BANK_TRANSFER',
+        totalAmountRON: 800,
+        creditContributionRON: 300,
+        applications: [{ invoiceId: 'inv', amountRON: 500 }],
+      }),
+    };
+    const service = new PaymentConfirmationsService(prisma as never, makePermissions() as never);
+
+    await service.remove('pc-1');
+
+    expect(prisma.apartment.creditBalanceRON).toBe(0);
   });
 });

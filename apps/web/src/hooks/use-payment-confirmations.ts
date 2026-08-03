@@ -15,13 +15,14 @@ export interface PaymentConfirmationDocument {
   fileName: string;
 }
 
-export type PaymentMethod = "CASH" | "BANK_TRANSFER";
+export type PaymentMethod = "CASH" | "BANK_TRANSFER" | "CREDIT";
 
 export interface PaymentConfirmation {
   id: string;
   apartmentId: string;
   ownerId: string;
   totalAmountRON: string;
+  creditContributionRON: string;
   paymentDate: string;
   paymentMethod: PaymentMethod;
   notes: string | null;
@@ -49,7 +50,8 @@ export interface CreatePaymentConfirmationInput {
   paymentDate: string;
   paymentMethod: PaymentMethod;
   notes?: string;
-  applications: PaymentApplicationInput[];
+  applications?: PaymentApplicationInput[];
+  autoApplyAmountRON?: number;
 }
 
 export function useCreatePaymentConfirmation() {

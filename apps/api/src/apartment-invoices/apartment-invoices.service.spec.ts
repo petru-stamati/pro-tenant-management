@@ -7,6 +7,17 @@ function makeUser(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser
 }
 
 function makePrisma() {
+  const tx = {
+    apartmentInvoice: {
+      create: jest.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'inv-new', ...args.data })),
+    },
+    paymentConfirmation: {
+      create: jest.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'pc-credit', ...args.data })),
+    },
+    apartment: {
+      update: jest.fn(async (args: { data: Record<string, unknown> }) => args.data),
+    },
+  };
   return {
     client: {
       apartment: { findFirst: jest.fn() },
@@ -19,8 +30,10 @@ function makePrisma() {
         })),
         delete: jest.fn(),
       },
+      $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
     forOwnerScope: jest.fn(),
+    tx,
   };
 }
 
@@ -70,6 +83,60 @@ describe('ApartmentInvoicesService.create', () => {
       expect.objectContaining({
         data: expect.objectContaining({ ownerId: 'owner-1', totalAmountRON: 1200, outstandingAmountRON: 1200 }),
       }),
+    );
+  });
+
+  it('auto-consumes a standing credit balance against a new invoice and records it as a CREDIT payment', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1', creditBalanceRON: 300 });
+    const service = new ApartmentInvoicesService(prisma as never, makePermissions() as never);
+
+    const invoice = await service.create(
+      {
+        apartmentId: 'apt-1',
+        type: 'RENT',
+        issueDate: '2026-07-01',
+        dueDate: '2026-07-10',
+        periodMonth: '2026-07-01',
+        totalAmountRON: 1000,
+      } as never,
+      makeUser({}),
+    );
+
+    expect((invoice as { paidAmountRON: number }).paidAmountRON).toBe(300);
+    expect((invoice as { outstandingAmountRON: number }).outstandingAmountRON).toBe(700);
+    expect((invoice as { status: string }).status).toBe('PARTIALLY_PAID');
+    expect(prisma.tx.paymentConfirmation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ paymentMethod: 'CREDIT', totalAmountRON: 300 }),
+      }),
+    );
+    expect(prisma.tx.apartment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { creditBalanceRON: { decrement: 300 } } }),
+    );
+  });
+
+  it('fully pays a new invoice from credit when the credit balance covers it entirely', async () => {
+    const prisma = makePrisma();
+    prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1', creditBalanceRON: 5000 });
+    const service = new ApartmentInvoicesService(prisma as never, makePermissions() as never);
+
+    const invoice = await service.create(
+      {
+        apartmentId: 'apt-1',
+        type: 'RENT',
+        issueDate: '2026-07-01',
+        dueDate: '2026-07-10',
+        periodMonth: '2026-07-01',
+        totalAmountRON: 1000,
+      } as never,
+      makeUser({}),
+    );
+
+    expect((invoice as { outstandingAmountRON: number }).outstandingAmountRON).toBe(0);
+    expect((invoice as { status: string }).status).toBe('PAID');
+    expect(prisma.tx.apartment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { creditBalanceRON: { decrement: 1000 } } }),
     );
   });
 });

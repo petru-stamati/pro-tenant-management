@@ -283,6 +283,12 @@ model Apartment {
   extras      String[]         @default([])
   status      ApartmentStatus  @default(VACANT)
 
+  /// Standing overpayment carried forward — set when a recorded payment
+  /// exceeds every currently-outstanding invoice for this apartment (see
+  /// PaymentConfirmationsService auto-apply). Auto-consumed against the next
+  /// invoice(s) created for this apartment (see ApartmentInvoicesService.create).
+  creditBalanceRON Decimal @default(0) @db.Decimal(10, 2)
+
   /// Denormalized pointer to the active Lease, maintained on lease
   /// activation/termination — lets the apartments list render tenant/rent
   /// inline (PRD §4.2 card layout) without a join per row.
@@ -798,6 +804,10 @@ model ApartmentInvoice {
 enum PaymentMethod {
   CASH
   BANK_TRANSFER
+  /// Auto-generated when a new invoice is created for an apartment with a
+  /// standing creditBalanceRON — not a real transfer, just makes the credit
+  /// consumption show up as a normal payment in the invoice's history.
+  CREDIT
 }
 
 /// One uploaded (or manually logged) payment. May cover one invoice fully,
@@ -818,6 +828,12 @@ model PaymentConfirmation {
   /// this field and were all bank transfers, hence the default.
   paymentMethod  PaymentMethod @default(BANK_TRANSFER)
   notes          String?
+
+  /// Portion of totalAmountRON that exceeded every outstanding invoice at
+  /// the time this payment was recorded (auto-apply mode) and was carried
+  /// onto the apartment's creditBalanceRON instead of an invoice — kept here
+  /// so totalAmountRON always reconciles: applications sum + this = total.
+  creditContributionRON Decimal @default(0) @db.Decimal(10, 2)
 
   documents Document[]
   tasks     Task[]

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useOwnerSummary } from "@/hooks/use-analytics";
 import { useApartments } from "@/hooks/use-apartments";
 import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
+import { OutstandingDrilldownDialog } from "@/components/outstanding-drilldown-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
 import { formatEUR, formatRON } from "@/lib/format";
@@ -15,6 +17,7 @@ export default function OwnerDashboardPage() {
   const { data: summary, isLoading: summaryLoading } = useOwnerSummary(user?.ownerId ?? undefined);
   const { data: apartments } = useApartments({ ownerId: user?.ownerId ?? undefined });
   const { data: notifications } = useNotifications();
+  const [outstandingDrilldown, setOutstandingDrilldown] = useState(false);
 
   return (
     <div className="mx-auto max-w-[1200px]">
@@ -56,8 +59,9 @@ export default function OwnerDashboardPage() {
           label="Outstanding"
           value={summaryLoading ? "…" : formatRON(summary?.outstandingRON ?? 0)}
           deltaTone="down"
+          onClick={() => setOutstandingDrilldown(true)}
         />
-        <KpiCard label="Paid" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
+        <KpiCard label="Paid this month" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
         <KpiCard label="Open Maintenance" value={summaryLoading ? "…" : String(summary?.openMaintenanceCount ?? 0)} />
         <KpiCard label="Occupancy Rate" value={summaryLoading ? "…" : `${summary?.occupancyRate ?? 0}%`} />
       </div>
@@ -112,6 +116,7 @@ export default function OwnerDashboardPage() {
           </div>
         </div>
       </div>
+      {outstandingDrilldown && <OutstandingDrilldownDialog basePath="/owner" onClose={() => setOutstandingDrilldown(false)} />}
     </div>
   );
 }

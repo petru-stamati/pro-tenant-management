@@ -10,6 +10,18 @@ export interface ApartmentInvoiceDocument {
   fileName: string;
 }
 
+export interface PaymentApplicationWithConfirmation {
+  id: string;
+  amountRON: string;
+  paymentConfirmation: {
+    id: string;
+    paymentDate: string;
+    paymentMethod: "CASH" | "BANK_TRANSFER" | "CREDIT";
+    notes: string | null;
+    documents?: ApartmentInvoiceDocument[];
+  };
+}
+
 export interface ApartmentInvoice {
   id: string;
   apartmentId: string;
@@ -26,13 +38,17 @@ export interface ApartmentInvoice {
   status: ApartmentInvoiceStatus;
   autoExtracted: boolean;
   documents?: ApartmentInvoiceDocument[];
+  applications?: PaymentApplicationWithConfirmation[];
   apartment?: { id: string; ownerId: string; name: string };
 }
 
-export function useApartmentInvoices(params: { apartmentId?: string; month?: string } = {}) {
+export function useApartmentInvoices(
+  params: { apartmentId?: string; month?: string; outstandingOnly?: boolean } = {},
+) {
   const query = new URLSearchParams({ pageSize: "100" });
   if (params.apartmentId) query.set("apartmentId", params.apartmentId);
   if (params.month) query.set("month", params.month);
+  if (params.outstandingOnly) query.set("outstandingOnly", "true");
   return useQuery({
     queryKey: ["apartment-invoices", params],
     queryFn: () => apiFetch<Paginated<ApartmentInvoice>>(`/apartment-invoices?${query.toString()}`),

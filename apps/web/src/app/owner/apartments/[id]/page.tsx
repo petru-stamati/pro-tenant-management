@@ -7,6 +7,7 @@ import { useApartment, useTenantHistory } from "@/hooks/use-apartments";
 import { useInvoices } from "@/hooks/use-invoices";
 import { useLeases } from "@/hooks/use-leases";
 import { useDocuments, downloadDocument, type DocumentItem } from "@/hooks/use-documents";
+import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export default function OwnerApartmentDetailPage() {
       <Tabs defaultValue="details">
         <TabsList>
           <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="lease">Current Lease</TabsTrigger>
@@ -50,6 +52,10 @@ export default function OwnerApartmentDetailPage() {
             <InfoItem label="Furnished" value={apartment.furnished ?? "—"} />
             <InfoItem label="Extras" value={apartment.extras.length ? apartment.extras.join(", ") : "—"} />
           </div>
+        </TabsContent>
+
+        <TabsContent value="financials" className="mt-5">
+          <ApartmentFinancialsTab apartmentId={id} canEdit={false} />
         </TabsContent>
 
         <TabsContent value="photos" className="mt-5">

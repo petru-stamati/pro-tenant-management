@@ -26,6 +26,7 @@ export interface Task {
   status: TaskStatus;
   assignedToRole: AssignedToRole;
   createdAt: string;
+  updatedAt: string;
   apartment?: { id: string; ownerId: string; name: string } | null;
   tenant?: { id: string; firstName: string; lastName: string } | null;
   createdBy?: { id: string; firstName: string; lastName: string; roleId: string };

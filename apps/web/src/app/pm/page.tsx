@@ -1,12 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useAdminSummary, useLeaseExpirations } from "@/hooks/use-analytics";
 import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
+import { RegisterPaymentDialog } from "@/components/payments-board";
+import { OutstandingDrilldownDialog } from "@/components/outstanding-drilldown-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatRON } from "@/lib/format";
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -20,6 +24,8 @@ export default function PmDashboardPage() {
   const { data: summary, isLoading: summaryLoading } = useAdminSummary();
   const { data: expirations, isLoading: expirationsLoading } = useLeaseExpirations(90);
   const { data: notifications } = useNotifications();
+  const [registerPayment, setRegisterPayment] = useState(false);
+  const [outstandingDrilldown, setOutstandingDrilldown] = useState(false);
 
   const maxOwnerRevenue = Math.max(1, ...(summary?.revenueByOwner.map((o) => o.monthlyRevenueEUR) ?? [1]));
 
@@ -33,7 +39,10 @@ export default function PmDashboardPage() {
             {new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}
           </p>
         </div>
+        <Button onClick={() => setRegisterPayment(true)}>+ Register payment</Button>
       </div>
+      {registerPayment && <RegisterPaymentDialog onClose={() => setRegisterPayment(false)} />}
+      {outstandingDrilldown && <OutstandingDrilldownDialog basePath="/pm" onClose={() => setOutstandingDrilldown(false)} />}
 
       <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
@@ -50,8 +59,9 @@ export default function PmDashboardPage() {
           value={summaryLoading ? "…" : formatRON(summary?.outstandingRON ?? 0)}
           deltaTone="down"
           delta={summary && summary.outstandingRON > 0 ? "Needs follow-up" : undefined}
+          onClick={() => setOutstandingDrilldown(true)}
         />
-        <KpiCard label="Paid" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
+        <KpiCard label="Paid this month" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
         <KpiCard
           label="Open Maintenance"
           value={summaryLoading ? "…" : String(summary?.openMaintenanceCount ?? 0)}

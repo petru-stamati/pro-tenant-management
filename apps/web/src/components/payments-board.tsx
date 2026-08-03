@@ -10,7 +10,7 @@ import {
   type ApartmentInvoiceType,
 } from "@/hooks/use-apartment-invoices";
 import { useCreatePaymentConfirmation, type PaymentMethod } from "@/hooks/use-payment-confirmations";
-import { useApartments } from "@/hooks/use-apartments";
+import { useApartments, useApartment } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
 import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import { StatusChip, paymentStatusTone } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
 import { formatRON, dateFormatter } from "@/lib/format";
 
-const TYPE_LABEL: Record<ApartmentInvoiceType, string> = {
+export const TYPE_LABEL: Record<ApartmentInvoiceType, string> = {
   RENT: "Rent",
   UTILITIES: "Utilities",
   RENT_AND_UTILITIES: "Rent + Utilities",
@@ -34,7 +34,7 @@ function currentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function monthLabel(month: string) {
+export function monthLabel(month: string) {
   const [y, m] = month.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
 }
@@ -53,6 +53,7 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
   const [uploadFor, setUploadFor] = useState<{ id: string; name: string } | null>(null);
   const [paymentFor, setPaymentFor] = useState<{ id: string; name: string } | null>(null);
   const [detailInvoice, setDetailInvoice] = useState<ApartmentInvoice | null>(null);
+  const [quickRegister, setQuickRegister] = useState(false);
 
   const invoicesByApartment = useMemo(() => {
     const map = new Map<string, ApartmentInvoice[]>();
@@ -69,9 +70,12 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
 
   return (
     <div className="mx-auto max-w-[1200px]">
-      <div className="mb-5">
-        <h1 className="text-[23px] font-semibold">Payments</h1>
-        <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} apartments</p>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[23px] font-semibold">Payments</h1>
+          <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} apartments</p>
+        </div>
+        {canRecordPayments && <Button onClick={() => setQuickRegister(true)}>+ Register payment</Button>}
       </div>
 
       <div className="mb-4 flex items-center gap-3">
@@ -181,7 +185,49 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
           onClose={() => setDetailInvoice(null)}
         />
       )}
+      {quickRegister && <RegisterPaymentDialog onClose={() => setQuickRegister(false)} />}
     </div>
+  );
+}
+
+/** Entry point that doesn't already have an apartment in context (PM dashboard, Payments tab header)
+ *  — picks the apartment first, then falls through to the normal RecordPaymentDialog. */
+export function RegisterPaymentDialog({ onClose }: { onClose: () => void }) {
+  const { data: apartments, isLoading } = useApartments();
+  const [apartmentId, setApartmentId] = useState("");
+
+  const selected = apartments?.data.find((a) => a.id === apartmentId);
+  if (selected) {
+    return <RecordPaymentDialog apartmentId={selected.id} apartmentName={selected.name} onClose={onClose} />;
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Register payment</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-2">
+          <Label>Apartment</Label>
+          {isLoading ? (
+            <p className="text-[13px] text-muted-foreground">Loading…</p>
+          ) : (
+            <Select value={apartmentId} onValueChange={(v) => setApartmentId(v ?? "")}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select an apartment" />
+              </SelectTrigger>
+              <SelectContent>
+                {apartments?.data.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -293,7 +339,13 @@ function UploadInvoiceDialog({
   );
 }
 
-function InvoiceDetailDialog({
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  CASH: "Cash",
+  BANK_TRANSFER: "Bank transfer",
+  CREDIT: "Applied from credit balance",
+};
+
+export function InvoiceDetailDialog({
   invoice,
   canEdit,
   onClose,
@@ -305,10 +357,19 @@ function InvoiceDetailDialog({
   const { data: documents } = useDocuments({ apartmentInvoiceId: invoice.id });
   const upload = useUploadDocument();
   const update = useUpdateApartmentInvoice();
+  const [type, setType] = useState<ApartmentInvoiceType>(invoice.type);
   const [invoiceNumber, setInvoiceNumber] = useState(invoice.invoiceNumber ?? "");
+  const [issueDate, setIssueDate] = useState(invoice.issueDate.slice(0, 10));
+  const [dueDate, setDueDate] = useState(invoice.dueDate.slice(0, 10));
+  const [periodMonth, setPeriodMonth] = useState(invoice.periodMonth.slice(0, 7));
   const [totalAmountRON, setTotalAmountRON] = useState(invoice.totalAmountRON);
   const [editing, setEditing] = useState(false);
   const [downloading, setDownloading] = useState(false);
+
+  const paymentHistory = useMemo(
+    () => [...(invoice.applications ?? [])].sort((a, b) => b.paymentConfirmation.paymentDate.localeCompare(a.paymentConfirmation.paymentDate)),
+    [invoice.applications],
+  );
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -338,7 +399,11 @@ function InvoiceDetailDialog({
     try {
       await update.mutateAsync({
         id: invoice.id,
+        type,
         invoiceNumber: invoiceNumber || undefined,
+        issueDate,
+        dueDate,
+        periodMonth: `${periodMonth}-01`,
         totalAmountRON: Number(totalAmountRON),
       });
       toast.success("Invoice updated");
@@ -350,7 +415,7 @@ function InvoiceDetailDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>
             {TYPE_LABEL[invoice.type]} invoice — {invoice.apartment?.name}
@@ -360,6 +425,23 @@ function InvoiceDetailDialog({
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Status</span>
             <StatusChip tone={paymentStatusTone(invoice.status)}>{invoice.status.replace("_", " ").toLowerCase()}</StatusChip>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Type</span>
+            {editing ? (
+              <Select value={type} onValueChange={(v) => setType((v as ApartmentInvoiceType) ?? "RENT")}>
+                <SelectTrigger className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RENT">Rent</SelectItem>
+                  <SelectItem value="UTILITIES">Utilities</SelectItem>
+                  <SelectItem value="RENT_AND_UTILITIES">Rent + Utilities</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <span>{TYPE_LABEL[invoice.type]}</span>
+            )}
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Invoice number</span>
@@ -380,7 +462,9 @@ function InvoiceDetailDialog({
                 onChange={(e) => setTotalAmountRON(e.target.value)}
               />
             ) : (
-              <span className="font-mono-tabular font-mono">{formatRON(invoice.totalAmountRON)}</span>
+              <span className="font-mono-tabular font-mono">
+                {formatRON(invoice.totalAmountRON)} <span className="text-[10px] text-muted-foreground">VAT incl.</span>
+              </span>
             )}
           </div>
           <div className="flex items-center justify-between">
@@ -393,15 +477,68 @@ function InvoiceDetailDialog({
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Issue date</span>
-            <span>{dateFormatter.format(new Date(invoice.issueDate))}</span>
+            {editing ? (
+              <Input className="w-36" type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} />
+            ) : (
+              <span>{dateFormatter.format(new Date(invoice.issueDate))}</span>
+            )}
           </div>
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Due date</span>
-            <span>{dateFormatter.format(new Date(invoice.dueDate))}</span>
+            {editing ? (
+              <Input className="w-36" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            ) : (
+              <span>{dateFormatter.format(new Date(invoice.dueDate))}</span>
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Billing month</span>
+            {editing ? (
+              <Input className="w-36" type="month" value={periodMonth} onChange={(e) => setPeriodMonth(e.target.value)} />
+            ) : (
+              <span>{monthLabel(invoice.periodMonth.slice(0, 7))}</span>
+            )}
           </div>
 
           <div className="flex flex-col gap-2 border-t border-border pt-3">
-            <Label>Document</Label>
+            <Label>Payment history</Label>
+            {paymentHistory.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {paymentHistory.map((app) => (
+                  <div key={app.id} className="rounded-md border border-border p-2.5 text-[12.5px]">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{formatRON(app.amountRON)}</span>
+                      <span className="text-muted-foreground">
+                        {dateFormatter.format(new Date(app.paymentConfirmation.paymentDate))}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-muted-foreground">
+                      {PAYMENT_METHOD_LABEL[app.paymentConfirmation.paymentMethod] ?? app.paymentConfirmation.paymentMethod}
+                    </div>
+                    {app.paymentConfirmation.documents && app.paymentConfirmation.documents.length > 0 && (
+                      <div className="mt-1.5 flex flex-col gap-1">
+                        {app.paymentConfirmation.documents.map((d) => (
+                          <button
+                            key={d.id}
+                            disabled={downloading}
+                            onClick={() => handleView(d.id, d.fileName)}
+                            className="truncate rounded-md border border-border px-2 py-1 text-left text-[11.5px] hover:border-primary"
+                          >
+                            {d.fileName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[12.5px] text-muted-foreground">No payments recorded against this invoice yet.</p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
+            <Label>Invoice document</Label>
             {documents && documents.data.length > 0 ? (
               <div className="flex flex-col gap-1.5">
                 {documents.data.map((d) => (
@@ -463,6 +600,7 @@ function RecordPaymentDialog({
   onClose: () => void;
 }) {
   const { data: allInvoices, isLoading } = useApartmentInvoices({ apartmentId });
+  const { data: apartment } = useApartment(apartmentId);
   const createPayment = useCreatePaymentConfirmation();
   const upload = useUploadDocument();
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -470,6 +608,8 @@ function RecordPaymentDialog({
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ApplicationDraft>>({});
+  const [autoApply, setAutoApply] = useState(true);
+  const [autoApplyAmount, setAutoApplyAmount] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const outstandingInvoices = useMemo(
@@ -480,6 +620,9 @@ function RecordPaymentDialog({
     [allInvoices],
   );
 
+  const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + Number(inv.outstandingAmountRON), 0);
+  const creditBalance = Number(apartment?.creditBalanceRON ?? 0);
+
   function draftFor(inv: ApartmentInvoice): ApplicationDraft {
     return drafts[inv.id] ?? { invoiceId: inv.id, included: false, paidInFull: false, amount: inv.outstandingAmountRON };
   }
@@ -488,26 +631,39 @@ function RecordPaymentDialog({
     setDrafts((prev) => ({ ...prev, [inv.id]: { ...draftFor(inv), ...patch } }));
   }
 
-  const total = outstandingInvoices.reduce((sum, inv) => {
+  const manualTotal = outstandingInvoices.reduce((sum, inv) => {
     const d = draftFor(inv);
     if (!d.included) return sum;
     const amount = d.paidInFull ? Number(inv.outstandingAmountRON) : Number(d.amount || 0);
     return sum + amount;
   }, 0);
 
+  const total = autoApply ? Number(autoApplyAmount || 0) : manualTotal;
+  const willCreateCredit = autoApply && Number(autoApplyAmount || 0) > totalOutstanding;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const applications = outstandingInvoices
-      .map((inv) => draftFor(inv))
-      .filter((d) => d.included)
-      .map((d) => ({
-        invoiceId: d.invoiceId,
-        paidInFull: d.paidInFull,
-        amountRON: d.paidInFull ? undefined : Number(d.amount),
-      }));
 
-    if (applications.length === 0) {
+    if (autoApply) {
+      if (!autoApplyAmount || Number(autoApplyAmount) <= 0) {
+        setError("Enter the amount that was paid.");
+        return;
+      }
+    }
+
+    const applications = autoApply
+      ? undefined
+      : outstandingInvoices
+          .map((inv) => draftFor(inv))
+          .filter((d) => d.included)
+          .map((d) => ({
+            invoiceId: d.invoiceId,
+            paidInFull: d.paidInFull,
+            amountRON: d.paidInFull ? undefined : Number(d.amount),
+          }));
+
+    if (!autoApply && (!applications || applications.length === 0)) {
       setError("Select at least one invoice this payment covers.");
       return;
     }
@@ -517,7 +673,7 @@ function RecordPaymentDialog({
         paymentDate,
         paymentMethod,
         notes: notes || undefined,
-        applications,
+        ...(autoApply ? { autoApplyAmountRON: Number(autoApplyAmount) } : { applications }),
       });
       if (file) {
         await upload.mutateAsync({ file, category: "RECEIPT", paymentConfirmationId: confirmation.id });
@@ -533,7 +689,7 @@ function RecordPaymentDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Record payment — {apartmentName}</DialogTitle>
         </DialogHeader>
@@ -574,59 +730,100 @@ function RecordPaymentDialog({
             </p>
           )}
 
-          <div className="flex flex-col gap-2">
-            <Label>Apply to invoices</Label>
-            {isLoading ? (
-              <p className="text-[13px] text-muted-foreground">Loading…</p>
-            ) : outstandingInvoices.length === 0 ? (
-              <p className="text-[13px] text-muted-foreground">No outstanding invoices for this apartment.</p>
-            ) : (
-              <div className="flex flex-col gap-2 rounded-md border border-border p-2.5">
-                {outstandingInvoices.map((inv) => {
-                  const d = draftFor(inv);
-                  return (
-                    <div key={inv.id} className="flex flex-col gap-1.5 border-b border-border pb-2 last:border-0 last:pb-0">
-                      <label className="flex items-center gap-2 text-[13px]">
-                        <input
-                          type="checkbox"
-                          checked={d.included}
-                          onChange={(e) => updateDraft(inv, { included: e.target.checked })}
-                        />
-                        <span className="font-medium">{TYPE_LABEL[inv.type]}</span>
-                        <span className="text-muted-foreground">
-                          {monthLabel(inv.periodMonth.slice(0, 7))} · outstanding {formatRON(inv.outstandingAmountRON)}
-                        </span>
-                      </label>
-                      {d.included && (
-                        <div className="ml-6 flex items-center gap-3">
-                          <label className="flex items-center gap-1.5 text-[12.5px]">
-                            <input
-                              type="checkbox"
-                              checked={d.paidInFull}
-                              onChange={(e) =>
-                                updateDraft(inv, { paidInFull: e.target.checked, amount: inv.outstandingAmountRON })
-                              }
-                            />
-                            Paid in full
-                          </label>
-                          {!d.paidInFull && (
-                            <Input
-                              type="number"
-                              step="0.01"
-                              max={inv.outstandingAmountRON}
-                              className="h-8 w-28"
-                              value={d.amount}
-                              onChange={(e) => updateDraft(inv, { amount: e.target.value })}
-                            />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {creditBalance > 0 && (
+            <p className="rounded-md bg-accent/40 px-3 py-2 text-[12.5px] text-muted-foreground">
+              This apartment has {formatRON(creditBalance)} in standing credit from a prior overpayment — it'll be applied
+              automatically the next time an invoice is created.
+            </p>
+          )}
+
+          <label className="flex items-center gap-2 text-[13px] font-medium">
+            <input type="checkbox" checked={autoApply} onChange={(e) => setAutoApply(e.target.checked)} />
+            Auto-apply to oldest outstanding invoices first
+          </label>
+
+          {autoApply ? (
+            <div className="flex flex-col gap-2">
+              <Label>Amount paid (RON)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                required
+                value={autoApplyAmount}
+                onChange={(e) => setAutoApplyAmount(e.target.value)}
+              />
+              {isLoading ? (
+                <p className="text-[12.5px] text-muted-foreground">Loading outstanding invoices…</p>
+              ) : totalOutstanding > 0 ? (
+                <p className="text-[12.5px] text-muted-foreground">
+                  Outstanding across {outstandingInvoices.length} invoice{outstandingInvoices.length === 1 ? "" : "s"}:{" "}
+                  {formatRON(totalOutstanding)}
+                </p>
+              ) : (
+                <p className="text-[12.5px] text-muted-foreground">No outstanding invoices — the full amount will be saved as credit.</p>
+              )}
+              {willCreateCredit && (
+                <p className="rounded-md bg-accent/40 px-3 py-2 text-[12.5px] text-muted-foreground">
+                  {formatRON(Number(autoApplyAmount) - totalOutstanding)} more than what's outstanding — the difference will
+                  be saved as credit for this apartment and applied to its next invoice automatically.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Label>Apply to invoices</Label>
+              {isLoading ? (
+                <p className="text-[13px] text-muted-foreground">Loading…</p>
+              ) : outstandingInvoices.length === 0 ? (
+                <p className="text-[13px] text-muted-foreground">No outstanding invoices for this apartment.</p>
+              ) : (
+                <div className="flex flex-col gap-2 rounded-md border border-border p-2.5">
+                  {outstandingInvoices.map((inv) => {
+                    const d = draftFor(inv);
+                    return (
+                      <div key={inv.id} className="flex flex-col gap-1.5 border-b border-border pb-2 last:border-0 last:pb-0">
+                        <label className="flex items-center gap-2 text-[13px]">
+                          <input
+                            type="checkbox"
+                            checked={d.included}
+                            onChange={(e) => updateDraft(inv, { included: e.target.checked })}
+                          />
+                          <span className="font-medium">{TYPE_LABEL[inv.type]}</span>
+                          <span className="text-muted-foreground">
+                            {monthLabel(inv.periodMonth.slice(0, 7))} · outstanding {formatRON(inv.outstandingAmountRON)}
+                          </span>
+                        </label>
+                        {d.included && (
+                          <div className="ml-6 flex items-center gap-3">
+                            <label className="flex items-center gap-1.5 text-[12.5px]">
+                              <input
+                                type="checkbox"
+                                checked={d.paidInFull}
+                                onChange={(e) =>
+                                  updateDraft(inv, { paidInFull: e.target.checked, amount: inv.outstandingAmountRON })
+                                }
+                              />
+                              Paid in full
+                            </label>
+                            {!d.paidInFull && (
+                              <Input
+                                type="number"
+                                step="0.01"
+                                max={inv.outstandingAmountRON}
+                                className="h-8 w-28"
+                                value={d.amount}
+                                onChange={(e) => updateDraft(inv, { amount: e.target.value })}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             <Label>Notes — optional</Label>

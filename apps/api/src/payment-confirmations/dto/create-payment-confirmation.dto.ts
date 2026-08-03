@@ -34,6 +34,13 @@ export class PaymentApplicationInputDto {
  * covers everything from "one invoice paid in full" to "1300 RON covering
  * last month's leftover balance, this month's rent in full, and part of
  * this month's utilities" (see Payments page spec).
+ *
+ * Two mutually exclusive modes (enforced in the service, not here, since
+ * class-validator doesn't express "exactly one of" cleanly): either the
+ * caller picks the invoices/amounts explicitly via `applications`, or hands
+ * over one lump `autoApplyAmountRON` and lets the server walk this
+ * apartment's outstanding invoices oldest-first — any leftover becomes a
+ * standing credit on the apartment.
  */
 export class CreatePaymentConfirmationDto {
   @IsString()
@@ -50,9 +57,15 @@ export class CreatePaymentConfirmationDto {
   @MinLength(1)
   notes?: string;
 
+  @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => PaymentApplicationInputDto)
-  applications!: PaymentApplicationInputDto[];
+  applications?: PaymentApplicationInputDto[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  autoApplyAmountRON?: number;
 }

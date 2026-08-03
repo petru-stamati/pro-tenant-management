@@ -11,6 +11,7 @@ import { useUtilityRecords } from "@/hooks/use-utility-records";
 import { useMaintenanceRequests } from "@/hooks/use-maintenance";
 import { useApartmentNotes, useCreateNote } from "@/hooks/use-notes";
 import { useShowings, useCreateShowing, useDeleteShowing } from "@/hooks/use-showings";
+import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusChip, apartmentStatusTone, apartmentStatusLabel, paymentStatusTone } from "@/components/status-chip";
@@ -61,6 +62,7 @@ export default function ApartmentDetailPage() {
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="payments">Rent Payments</TabsTrigger>
           <TabsTrigger value="utilities">Utilities</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
@@ -78,6 +80,10 @@ export default function ApartmentDetailPage() {
             <InfoItem label="Furnished" value={apartment.furnished ?? "—"} />
             <InfoItem label="Extras" value={apartment.extras.length ? apartment.extras.join(", ") : "—"} />
           </div>
+        </TabsContent>
+
+        <TabsContent value="financials" className="mt-5">
+          <ApartmentFinancialsTab apartmentId={id} canEdit={true} />
         </TabsContent>
 
         <TabsContent value="payments" className="mt-5">

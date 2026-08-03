@@ -17,6 +17,7 @@ export interface ApartmentSummary {
     tenantId: string;
     endDate: string;
   } | null;
+  creditBalanceRON: string;
 }
 
 export function useApartments(params: { ownerId?: string; status?: string; search?: string } = {}) {

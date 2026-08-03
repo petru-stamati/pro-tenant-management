@@ -1,4 +1,5 @@
-import { IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../common/pagination';
 
 export class ListApartmentInvoicesDto extends PaginationQueryDto {
@@ -10,4 +11,10 @@ export class ListApartmentInvoicesDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   month?: string;
+
+  /** All-time (ignores `month`), status UNPAID or PARTIALLY_PAID only — powers the Outstanding KPI drill-down. */
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  outstandingOnly?: boolean;
 }

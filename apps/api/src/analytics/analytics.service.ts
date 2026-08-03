@@ -13,6 +13,14 @@ import { AuthenticatedUser } from '../common/types/authenticated-user';
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private currentMonthRange() {
+    const now = new Date();
+    return {
+      gte: new Date(now.getFullYear(), now.getMonth(), 1),
+      lt: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+    };
+  }
+
   async ownerSummary(user: AuthenticatedUser, ownerId: string) {
     if (user.roleKey === 'OWNER' && user.ownerId !== ownerId) {
       throw new NotFoundException('Owner not found');
@@ -41,9 +49,9 @@ export class AnalyticsService {
         where: { ownerId, status: { in: ['UNPAID', 'PARTIALLY_PAID'] } },
         _sum: { outstandingAmountRON: true },
       }),
-      this.prisma.client.apartmentInvoice.aggregate({
-        where: { ownerId },
-        _sum: { paidAmountRON: true },
+      this.prisma.client.paymentConfirmation.aggregate({
+        where: { ownerId, paymentDate: this.currentMonthRange() },
+        _sum: { totalAmountRON: true },
       }),
       this.prisma.client.maintenanceRequest.count({
         where: { ownerId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
@@ -65,7 +73,7 @@ export class AnalyticsService {
       monthlyRentalIncomeEUR,
       outstandingRentEUR: Number(outstanding._sum.outstandingAmountEUR ?? 0),
       outstandingRON: Number(outstandingRON._sum.outstandingAmountRON ?? 0),
-      paidRON: Number(paidRON._sum.paidAmountRON ?? 0),
+      paidRON: Number(paidRON._sum.totalAmountRON ?? 0),
       openMaintenanceCount: openMaintenance,
       nextLeaseExpiration: nextExpiring
         ? {
@@ -101,8 +109,9 @@ export class AnalyticsService {
         where: { status: { in: ['UNPAID', 'PARTIALLY_PAID'] } },
         _sum: { outstandingAmountRON: true },
       }),
-      this.prisma.client.apartmentInvoice.aggregate({
-        _sum: { paidAmountRON: true },
+      this.prisma.client.paymentConfirmation.aggregate({
+        where: { paymentDate: this.currentMonthRange() },
+        _sum: { totalAmountRON: true },
       }),
       this.prisma.client.maintenanceRequest.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
       this.prisma.client.lease.groupBy({
@@ -126,7 +135,7 @@ export class AnalyticsService {
       monthlyRevenueEUR: activeLeases.reduce((sum, l) => sum + Number(l.rentAmountEUR), 0),
       outstandingRentEUR: Number(outstanding._sum.outstandingAmountEUR ?? 0),
       outstandingRON: Number(outstandingRON._sum.outstandingAmountRON ?? 0),
-      paidRON: Number(paidRON._sum.paidAmountRON ?? 0),
+      paidRON: Number(paidRON._sum.totalAmountRON ?? 0),
       openMaintenanceCount: openMaintenance,
       revenueByOwner: revenueByOwner.map((r) => ({
         ownerId: r.ownerId,
