@@ -8,6 +8,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
 import { RegisterPaymentDialog } from "@/components/payments-board";
 import { OutstandingDrilldownDialog } from "@/components/outstanding-drilldown-dialog";
+import { NewTaskDialog } from "@/components/tasks-board";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,10 @@ export default function PmDashboardPage() {
             {new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}
           </p>
         </div>
-        <Button onClick={() => setRegisterPayment(true)}>+ Register payment</Button>
+        <div className="flex items-center gap-2">
+          <NewTaskDialog role="PM" />
+          <Button onClick={() => setRegisterPayment(true)}>+ Register payment</Button>
+        </div>
       </div>
       {registerPayment && <RegisterPaymentDialog onClose={() => setRegisterPayment(false)} />}
       {outstandingDrilldown && <OutstandingDrilldownDialog basePath="/pm" onClose={() => setOutstandingDrilldown(false)} />}
@@ -61,7 +65,11 @@ export default function PmDashboardPage() {
           delta={summary && summary.outstandingRON > 0 ? "Needs follow-up" : undefined}
           onClick={() => setOutstandingDrilldown(true)}
         />
-        <KpiCard label="Paid this month" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
+        <KpiCard
+          label="Paid this month"
+          value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)}
+          delta={summary ? `of ${formatRON(summary.invoicedRON)} invoiced` : undefined}
+        />
         <KpiCard
           label="Open Maintenance"
           value={summaryLoading ? "…" : String(summary?.openMaintenanceCount ?? 0)}

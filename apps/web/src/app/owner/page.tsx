@@ -61,7 +61,11 @@ export default function OwnerDashboardPage() {
           deltaTone="down"
           onClick={() => setOutstandingDrilldown(true)}
         />
-        <KpiCard label="Paid this month" value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)} />
+        <KpiCard
+          label="Paid this month"
+          value={summaryLoading ? "…" : formatRON(summary?.paidRON ?? 0)}
+          delta={summary ? `of ${formatRON(summary.invoicedRON)} invoiced` : undefined}
+        />
         <KpiCard label="Open Maintenance" value={summaryLoading ? "…" : String(summary?.openMaintenanceCount ?? 0)} />
         <KpiCard label="Occupancy Rate" value={summaryLoading ? "…" : `${summary?.occupancyRate ?? 0}%`} />
       </div>

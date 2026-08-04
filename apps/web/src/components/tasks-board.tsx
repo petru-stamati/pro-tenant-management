@@ -133,7 +133,7 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") || parts[0] };
 }
 
-function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
+export function NewTaskDialog({ role }: { role: "PM" | "OWNER" }) {
   const [open, setOpen] = useState(false);
   const { data: owners } = useOwners();
   const create = useCreateTask();

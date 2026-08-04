@@ -35,6 +35,7 @@ export class AnalyticsService {
       outstanding,
       outstandingRON,
       paidRON,
+      invoicedRON,
       openMaintenance,
       nextExpiring,
     ] = await Promise.all([
@@ -51,6 +52,10 @@ export class AnalyticsService {
       }),
       this.prisma.client.paymentConfirmation.aggregate({
         where: { ownerId, paymentDate: this.currentMonthRange() },
+        _sum: { totalAmountRON: true },
+      }),
+      this.prisma.client.apartmentInvoice.aggregate({
+        where: { ownerId, periodMonth: this.currentMonthRange() },
         _sum: { totalAmountRON: true },
       }),
       this.prisma.client.maintenanceRequest.count({
@@ -74,6 +79,7 @@ export class AnalyticsService {
       outstandingRentEUR: Number(outstanding._sum.outstandingAmountEUR ?? 0),
       outstandingRON: Number(outstandingRON._sum.outstandingAmountRON ?? 0),
       paidRON: Number(paidRON._sum.totalAmountRON ?? 0),
+      invoicedRON: Number(invoicedRON._sum.totalAmountRON ?? 0),
       openMaintenanceCount: openMaintenance,
       nextLeaseExpiration: nextExpiring
         ? {
@@ -95,6 +101,7 @@ export class AnalyticsService {
       outstanding,
       outstandingRON,
       paidRON,
+      invoicedRON,
       openMaintenance,
       revenueByOwner,
     ] = await Promise.all([
@@ -111,6 +118,10 @@ export class AnalyticsService {
       }),
       this.prisma.client.paymentConfirmation.aggregate({
         where: { paymentDate: this.currentMonthRange() },
+        _sum: { totalAmountRON: true },
+      }),
+      this.prisma.client.apartmentInvoice.aggregate({
+        where: { periodMonth: this.currentMonthRange() },
         _sum: { totalAmountRON: true },
       }),
       this.prisma.client.maintenanceRequest.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
@@ -136,6 +147,7 @@ export class AnalyticsService {
       outstandingRentEUR: Number(outstanding._sum.outstandingAmountEUR ?? 0),
       outstandingRON: Number(outstandingRON._sum.outstandingAmountRON ?? 0),
       paidRON: Number(paidRON._sum.totalAmountRON ?? 0),
+      invoicedRON: Number(invoicedRON._sum.totalAmountRON ?? 0),
       openMaintenanceCount: openMaintenance,
       revenueByOwner: revenueByOwner.map((r) => ({
         ownerId: r.ownerId,

@@ -50,6 +50,7 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
   const { data: apartments, isLoading: apartmentsLoading } = useApartments();
   const { data: owners } = useOwners();
   const { data: invoices, isLoading: invoicesLoading } = useApartmentInvoices({ month });
+  const { data: outstandingInvoices } = useApartmentInvoices({ outstandingOnly: true });
   const [uploadFor, setUploadFor] = useState<{ id: string; name: string } | null>(null);
   const [paymentFor, setPaymentFor] = useState<{ id: string; name: string } | null>(null);
   const [detailInvoice, setDetailInvoice] = useState<ApartmentInvoice | null>(null);
@@ -64,6 +65,18 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
     });
     return map;
   }, [invoices]);
+
+  // All-time outstanding, not just this month's invoices — a July balance
+  // doesn't vanish from the board just because we've paged to August.
+  const outstandingByApartment = useMemo(() => {
+    const map = new Map<string, ApartmentInvoice[]>();
+    outstandingInvoices?.data.forEach((inv) => {
+      const list = map.get(inv.apartmentId) ?? [];
+      list.push(inv);
+      map.set(inv.apartmentId, list);
+    });
+    return map;
+  }, [outstandingInvoices]);
 
   const ownerName = (ownerId: string | undefined) => owners?.data.find((o) => o.id === ownerId)?.companyName ?? "—";
   const isLoading = apartmentsLoading || invoicesLoading;
@@ -109,7 +122,15 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
             <tbody>
               {apartments.data.map((a) => {
                 const apartmentInvoices = invoicesByApartment.get(a.id) ?? [];
-                const outstanding = apartmentInvoices.reduce((sum, inv) => sum + Number(inv.outstandingAmountRON), 0);
+                const apartmentOutstanding = outstandingByApartment.get(a.id) ?? [];
+                const outstandingTotal = apartmentOutstanding.reduce((sum, inv) => sum + Number(inv.outstandingAmountRON), 0);
+                const outstandingByMonth = [...apartmentOutstanding]
+                  .reduce((map, inv) => {
+                    const key = inv.periodMonth.slice(0, 7);
+                    map.set(key, (map.get(key) ?? 0) + Number(inv.outstandingAmountRON));
+                    return map;
+                  }, new Map<string, number>());
+                const outstandingBreakdown = [...outstandingByMonth.entries()].sort(([a], [b]) => a.localeCompare(b));
                 return (
                   <tr key={a.id} className="border-b border-border last:border-0 align-top">
                     <td className="p-3">
@@ -144,7 +165,24 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
                         <span className="text-[12.5px] text-muted-foreground">—</span>
                       )}
                     </td>
-                    <td className="p-3 font-mono-tabular font-mono">{outstanding > 0 ? formatRON(outstanding) : "—"}</td>
+                    <td className="p-3">
+                      {outstandingTotal > 0 ? (
+                        <div>
+                          <div className="font-mono-tabular font-mono">{formatRON(outstandingTotal)}</div>
+                          {outstandingBreakdown.length > 1 && (
+                            <div className="mt-0.5 flex flex-col gap-0.5">
+                              {outstandingBreakdown.map(([m, amt]) => (
+                                <span key={m} className="text-[10.5px] text-muted-foreground">
+                                  {monthLabel(m)}: {formatRON(amt)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="font-mono-tabular font-mono">—</span>
+                      )}
+                    </td>
                     <td className="p-3">
                       <div className="flex flex-col gap-1.5">
                         <Button variant="outline" size="sm" onClick={() => setUploadFor({ id: a.id, name: a.name })}>

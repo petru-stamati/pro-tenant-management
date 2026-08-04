@@ -10,6 +10,7 @@ export interface AdminSummary {
   outstandingRentEUR: number;
   outstandingRON: number;
   paidRON: number;
+  invoicedRON: number;
   openMaintenanceCount: number;
   revenueByOwner: { ownerId: string; ownerName: string; monthlyRevenueEUR: number }[];
 }
@@ -23,6 +24,7 @@ export interface OwnerSummary {
   outstandingRentEUR: number;
   outstandingRON: number;
   paidRON: number;
+  invoicedRON: number;
   openMaintenanceCount: number;
   nextLeaseExpiration: { apartmentName: string; endDate: string; daysRemaining: number } | null;
 }

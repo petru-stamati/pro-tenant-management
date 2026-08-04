@@ -41,7 +41,12 @@ export class DocumentsService {
     if (user.roleKey === 'TENANT') {
       const where = { ...filters, lease: { tenantId: user.tenantId ?? '__none__' } };
       const [data, total] = await Promise.all([
-        this.prisma.client.document.findMany({ where, orderBy: { createdAt: 'desc' }, ...skipTake(page, pageSize) }),
+        this.prisma.client.document.findMany({
+          where,
+          include: { apartment: true, utilityRecord: true },
+          orderBy: { createdAt: 'desc' },
+          ...skipTake(page, pageSize),
+        }),
         this.prisma.client.document.count({ where }),
       ]);
       return paginate(data, total, page, pageSize);
@@ -50,7 +55,12 @@ export class DocumentsService {
     const allowedOwnerIds = await this.permissions.resolveAllowedOwnerIds(user);
     const scoped = this.prisma.forOwnerScope(allowedOwnerIds);
     const [data, total] = await Promise.all([
-      scoped.document.findMany({ where: filters, orderBy: { createdAt: 'desc' }, ...skipTake(page, pageSize) }),
+      scoped.document.findMany({
+        where: filters,
+        include: { apartment: true, utilityRecord: true },
+        orderBy: { createdAt: 'desc' },
+        ...skipTake(page, pageSize),
+      }),
       scoped.document.count({ where: filters }),
     ]);
     return paginate(data, total, page, pageSize);

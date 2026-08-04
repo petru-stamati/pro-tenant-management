@@ -12,13 +12,17 @@ export interface DocumentItem {
   sizeBytes: number;
   version: number;
   createdAt: string;
+  apartmentId?: string | null;
+  utilityRecordId?: string | null;
   apartment?: { id: string; name: string } | null;
+  utilityRecord?: { id: string; periodMonth: string; utilityType: string } | null;
 }
 
 export function useDocuments(
   params: {
     apartmentId?: string;
     leaseId?: string;
+    category?: string;
     utilityRecordId?: string;
     apartmentInvoiceId?: string;
     paymentConfirmationId?: string;
@@ -28,6 +32,7 @@ export function useDocuments(
   const query = new URLSearchParams({ pageSize: "50" });
   if (params.apartmentId) query.set("apartmentId", params.apartmentId);
   if (params.leaseId) query.set("leaseId", params.leaseId);
+  if (params.category) query.set("category", params.category);
   if (params.utilityRecordId) query.set("utilityRecordId", params.utilityRecordId);
   if (params.apartmentInvoiceId) query.set("apartmentInvoiceId", params.apartmentInvoiceId);
   if (params.paymentConfirmationId) query.set("paymentConfirmationId", params.paymentConfirmationId);
