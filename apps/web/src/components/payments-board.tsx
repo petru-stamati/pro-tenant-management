@@ -13,6 +13,7 @@ import { useCreatePaymentConfirmation, type PaymentMethod } from "@/hooks/use-pa
 import { useApartments, useApartment } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
 import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
+import { UploadInvoicesDialog, ReviewInvoicesDialog } from "@/components/invoice-upload-review";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,7 +46,13 @@ function shiftMonth(month: string, delta: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolean }) {
+export function PaymentsBoard({
+  canRecordPayments,
+  role,
+}: {
+  canRecordPayments: boolean;
+  role: "PM" | "OWNER";
+}) {
   const [month, setMonth] = useState(currentMonth());
   const { data: apartments, isLoading: apartmentsLoading } = useApartments();
   const { data: owners } = useOwners();
@@ -55,6 +62,8 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
   const [paymentFor, setPaymentFor] = useState<{ id: string; name: string } | null>(null);
   const [detailInvoice, setDetailInvoice] = useState<ApartmentInvoice | null>(null);
   const [quickRegister, setQuickRegister] = useState(false);
+  const [uploadInvoices, setUploadInvoices] = useState(false);
+  const [reviewInvoices, setReviewInvoices] = useState(false);
 
   const invoicesByApartment = useMemo(() => {
     const map = new Map<string, ApartmentInvoice[]>();
@@ -88,7 +97,19 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
           <h1 className="text-[23px] font-semibold">Payments</h1>
           <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} apartments</p>
         </div>
-        {canRecordPayments && <Button onClick={() => setQuickRegister(true)}>+ Register payment</Button>}
+        <div className="flex items-center gap-2">
+          {role === "OWNER" && (
+            <Button variant="outline" onClick={() => setUploadInvoices(true)}>
+              + Upload invoices
+            </Button>
+          )}
+          {role === "PM" && (
+            <Button variant="outline" onClick={() => setReviewInvoices(true)}>
+              Invoices to assign
+            </Button>
+          )}
+          {canRecordPayments && <Button onClick={() => setQuickRegister(true)}>+ Register payment</Button>}
+        </div>
       </div>
 
       <div className="mb-4 flex items-center gap-3">
@@ -224,6 +245,8 @@ export function PaymentsBoard({ canRecordPayments }: { canRecordPayments: boolea
         />
       )}
       {quickRegister && <RegisterPaymentDialog onClose={() => setQuickRegister(false)} />}
+      {uploadInvoices && <UploadInvoicesDialog onClose={() => setUploadInvoices(false)} />}
+      {reviewInvoices && <ReviewInvoicesDialog onClose={() => setReviewInvoices(false)} />}
     </div>
   );
 }

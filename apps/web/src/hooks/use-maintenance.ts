@@ -86,12 +86,21 @@ export function useMaintenanceComments(id: string | undefined) {
 export function useCreateMaintenanceRequest() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { apartmentId: string; title: string; description: string; urgent?: boolean }) =>
+    mutationFn: (input: {
+      apartmentId: string;
+      title: string;
+      description: string;
+      urgent?: boolean;
+      roomItemId?: string;
+    }) =>
       apiFetch<MaintenanceRequestSummary>("/maintenance-requests", {
         method: "POST",
         body: JSON.stringify(input),
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["maintenance-requests"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["maintenance-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+    },
   });
 }
 

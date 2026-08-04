@@ -14,6 +14,8 @@ export interface DocumentItem {
   createdAt: string;
   apartmentId?: string | null;
   utilityRecordId?: string | null;
+  apartmentInvoiceId?: string | null;
+  periodMonth?: string | null;
   apartment?: { id: string; name: string } | null;
   utilityRecord?: { id: string; periodMonth: string; utilityType: string } | null;
 }
@@ -27,6 +29,7 @@ export function useDocuments(
     apartmentInvoiceId?: string;
     paymentConfirmationId?: string;
     taskId?: string;
+    unassigned?: boolean;
   } = {},
 ) {
   const query = new URLSearchParams({ pageSize: "50" });
@@ -37,6 +40,7 @@ export function useDocuments(
   if (params.apartmentInvoiceId) query.set("apartmentInvoiceId", params.apartmentInvoiceId);
   if (params.paymentConfirmationId) query.set("paymentConfirmationId", params.paymentConfirmationId);
   if (params.taskId) query.set("taskId", params.taskId);
+  if (params.unassigned) query.set("unassigned", "true");
   return useQuery({
     queryKey: ["documents", params],
     queryFn: () => apiFetch<Paginated<DocumentItem>>(`/documents?${query.toString()}`),
@@ -52,6 +56,7 @@ export interface UploadDocumentInput {
   apartmentInvoiceId?: string;
   paymentConfirmationId?: string;
   taskId?: string;
+  periodMonth?: string;
 }
 
 /** Runs the full three-step flow (Phase 3 §11): upload-url -> raw PUT -> complete. */
@@ -67,6 +72,7 @@ export function useUploadDocument() {
       apartmentInvoiceId,
       paymentConfirmationId,
       taskId,
+      periodMonth,
     }: UploadDocumentInput) => {
       const { documentId, uploadUrl } = await apiFetch<{ documentId: string; uploadUrl: string }>(
         "/documents/upload-url",
@@ -83,6 +89,7 @@ export function useUploadDocument() {
             apartmentInvoiceId,
             paymentConfirmationId,
             taskId,
+            periodMonth,
           }),
         },
       );
@@ -100,6 +107,32 @@ export function useUploadDocument() {
       return apiFetch(`/documents/${documentId}/complete`, { method: "POST" });
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
+  });
+}
+
+export interface AssignInvoiceInput {
+  id: string;
+  apartmentId: string;
+  type: "RENT" | "UTILITIES" | "RENT_AND_UTILITIES";
+  invoiceNumber?: string;
+  issueDate: string;
+  dueDate: string;
+  periodMonth: string;
+  totalAmountRON: number;
+}
+
+/** PM's triage action — turns an Owner's unassigned invoice upload into a real ApartmentInvoice. */
+export function useAssignInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: AssignInvoiceInput) =>
+      apiFetch(`/documents/${id}/assign-invoice`, { method: "PATCH", body: JSON.stringify(input) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      queryClient.invalidateQueries({ queryKey: ["apartment-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
   });
 }
 
@@ -121,4 +154,16 @@ export async function downloadDocument(id: string, fileName: string) {
   a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/** Like downloadDocument, but opens in a new tab for inline viewing instead of forcing a download. */
+export async function viewDocument(id: string) {
+  const res = await fetch(`${API_URL}/documents/${id}/download`, {
+    credentials: "include",
+    headers: { Authorization: `Bearer ${getAccessToken()}` },
+  });
+  if (!res.ok) throw new Error("Could not open document");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
 }

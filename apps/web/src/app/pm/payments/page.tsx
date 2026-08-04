@@ -3,5 +3,5 @@
 import { PaymentsBoard } from "@/components/payments-board";
 
 export default function PmPaymentsPage() {
-  return <PaymentsBoard canRecordPayments />;
+  return <PaymentsBoard canRecordPayments role="PM" />;
 }

@@ -2,11 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../common/permissions.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { ApartmentInvoicesService } from '../apartment-invoices/apartment-invoices.service';
 import { LocalStorageService } from './local-storage.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { paginate, skipTake } from '../common/pagination';
 import { CreateUploadUrlDto } from './dto/create-upload-url.dto';
 import { ListDocumentsDto } from './dto/list-documents.dto';
+import { AssignInvoiceDto } from './dto/assign-invoice.dto';
 
 @Injectable()
 export class DocumentsService {
@@ -14,6 +17,8 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
     private readonly storage: LocalStorageService,
+    private readonly notifications: NotificationsService,
+    private readonly apartmentInvoices: ApartmentInvoicesService,
   ) {}
 
   async list(user: AuthenticatedUser, query: ListDocumentsDto) {
@@ -27,9 +32,11 @@ export class DocumentsService {
       apartmentInvoiceId,
       paymentConfirmationId,
       taskId,
+      unassigned,
     } = query;
     const filters = {
       ...(apartmentId ? { apartmentId } : {}),
+      ...(unassigned ? { apartmentId: null } : {}),
       ...(leaseId ? { leaseId } : {}),
       ...(category ? { category: category as never } : {}),
       ...(utilityRecordId ? { utilityRecordId } : {}),
@@ -67,21 +74,24 @@ export class DocumentsService {
   }
 
   async createUploadUrl(dto: CreateUploadUrlDto, uploadedBy: AuthenticatedUser) {
-    if (
-      !dto.apartmentId &&
-      !dto.leaseId &&
-      !dto.maintenanceRequestId &&
-      !dto.utilityRecordId &&
-      !dto.apartmentInvoiceId &&
-      !dto.paymentConfirmationId &&
-      !dto.taskId
-    ) {
+    let ownerId = await this.resolveOwnerId(dto);
+
+    // The Owner's bulk "upload this month's invoices" flow — no apartment
+    // chosen yet, just a billing month. `ownerId` here is the caller's own
+    // (never client-supplied), so this can't be used to upload into another
+    // owner's unassigned pool.
+    const isUnassignedOwnerInvoice =
+      !ownerId && uploadedBy.roleKey === 'OWNER' && dto.category === 'INVOICE' && !!dto.periodMonth;
+    if (isUnassignedOwnerInvoice) {
+      ownerId = uploadedBy.ownerId ?? undefined;
+    }
+
+    if (!ownerId) {
       throw new BadRequestException(
         'Attach the document to an apartment, lease, utility record, invoice, payment confirmation, task, or maintenance request',
       );
     }
 
-    const ownerId = await this.resolveOwnerId(dto);
     await this.assertOwnerAccess(uploadedBy, ownerId);
     const s3Key = `${dto.category.toLowerCase()}/${randomBytes(8).toString('hex')}-${sanitize(dto.fileName)}`;
 
@@ -96,6 +106,7 @@ export class DocumentsService {
         apartmentInvoiceId: dto.apartmentInvoiceId,
         paymentConfirmationId: dto.paymentConfirmationId,
         taskId: dto.taskId,
+        periodMonth: dto.periodMonth ? new Date(`${dto.periodMonth}-01`) : undefined,
         fileName: dto.fileName,
         mimeType: dto.mimeType,
         sizeBytes: dto.sizeBytes,
@@ -104,8 +115,48 @@ export class DocumentsService {
       },
     });
 
+    if (isUnassignedOwnerInvoice) {
+      await this.notifications.notifyRole(
+        ownerId,
+        'ADMIN',
+        'INVOICES_PENDING_ASSIGNMENT',
+        'New invoice uploaded — needs assigning',
+        `${dto.fileName} (${dto.periodMonth}) is waiting to be assigned to an apartment.`,
+        'Document',
+        document.id,
+      );
+    }
+
     // Real S3 would return a presigned PUT URL here instead (Phase 3 §11).
     return { documentId: document.id, uploadUrl: `/documents/${document.id}/raw-upload`, s3Key };
+  }
+
+  /** PM's triage action — turns an Owner's unassigned invoice upload into a real ApartmentInvoice. */
+  async assignInvoice(id: string, dto: AssignInvoiceDto, user: AuthenticatedUser) {
+    const document = await this.assertExistsScoped(user, id);
+    if (document.category !== 'INVOICE' || document.apartmentId) {
+      throw new BadRequestException('Only unassigned invoice uploads can be assigned');
+    }
+
+    const invoice = await this.apartmentInvoices.create(
+      {
+        apartmentId: dto.apartmentId,
+        type: dto.type,
+        invoiceNumber: dto.invoiceNumber,
+        issueDate: dto.issueDate,
+        dueDate: dto.dueDate,
+        periodMonth: dto.periodMonth,
+        totalAmountRON: dto.totalAmountRON,
+      },
+      user,
+    );
+
+    await this.prisma.client.document.update({
+      where: { id },
+      data: { apartmentId: dto.apartmentId, apartmentInvoiceId: (invoice as { id: string }).id },
+    });
+
+    return invoice;
   }
 
   async receiveUpload(user: AuthenticatedUser, id: string, buffer: Buffer) {

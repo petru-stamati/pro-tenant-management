@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Res,
@@ -15,6 +16,7 @@ import { Response } from 'express';
 import { DocumentsService } from './documents.service';
 import { CreateUploadUrlDto } from './dto/create-upload-url.dto';
 import { ListDocumentsDto } from './dto/list-documents.dto';
+import { AssignInvoiceDto } from './dto/assign-invoice.dto';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
@@ -80,5 +82,11 @@ export class DocumentsController {
   @RequirePermission('documents:write')
   remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.documents.remove(user, id);
+  }
+
+  @Patch(':id/assign-invoice')
+  @RequirePermission('invoices:write')
+  assignInvoice(@Param('id') id: string, @Body() dto: AssignInvoiceDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.documents.assignInvoice(id, dto, user);
   }
 }

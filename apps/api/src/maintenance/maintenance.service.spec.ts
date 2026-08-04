@@ -9,7 +9,10 @@ function makeUser(overrides: Partial<AuthenticatedUser>): AuthenticatedUser {
 /** Minimal fake of the PrismaService surface the maintenance service touches. */
 function makePrisma(overrides: Record<string, unknown> = {}) {
   const tx = {
-    maintenanceRequest: { update: jest.fn(async (args) => ({ id: args.where.id, ...args.data })) },
+    maintenanceRequest: {
+      create: jest.fn(async (args) => ({ id: 'req-new', ...args.data })),
+      update: jest.fn(async (args) => ({ id: args.where.id, ...args.data })),
+    },
     maintenanceStatusEvent: { create: jest.fn() },
     maintenanceProposal: {
       updateMany: jest.fn(),
@@ -17,9 +20,12 @@ function makePrisma(overrides: Record<string, unknown> = {}) {
       create: jest.fn(async (args) => ({ id: 'prop-new', ...args.data })),
       update: jest.fn(),
     },
+    roomItem: { update: jest.fn(async (args) => ({ id: args.where.id, ...args.data })) },
   };
   const prisma = {
     client: {
+      apartment: { findFirst: jest.fn().mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' }) },
+      lease: { findFirst: jest.fn() },
       maintenanceRequest: { findFirst: jest.fn() },
       maintenanceProposal: { findFirst: jest.fn() },
       maintenanceComment: { findMany: jest.fn(), create: jest.fn() },
@@ -285,6 +291,60 @@ describe('MaintenanceService state machine', () => {
 
       const calledWith = findMany.mock.calls[0][0];
       expect(calledWith.where.visibleToTenant).toBeUndefined();
+    });
+  });
+
+  describe('create — room item linking', () => {
+    it('marks the linked item NEEDS_ATTENTION when reported via "report a problem"', async () => {
+      const prisma = makePrisma();
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+      await service.create(
+        { apartmentId: 'apt-1', title: 'Dishwasher leaking', description: 'y', roomItemId: 'item-1' } as never,
+        makeUser({}),
+      );
+
+      expect(prisma.tx.maintenanceRequest.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ roomItemId: 'item-1' }) }),
+      );
+      expect(prisma.tx.roomItem.update).toHaveBeenCalledWith({
+        where: { id: 'item-1' },
+        data: { condition: 'NEEDS_ATTENTION', conditionNote: 'Dishwasher leaking' },
+      });
+    });
+
+    it('does not touch any room item when reported without one', async () => {
+      const prisma = makePrisma();
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+      await service.create({ apartmentId: 'apt-1', title: 'x', description: 'y' } as never, makeUser({}));
+
+      expect(prisma.tx.roomItem.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changeStatus — room item resolution', () => {
+    it('resets the linked item back to GOOD when the request completes', async () => {
+      const prisma = makePrisma();
+      prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'REPAIRED', roomItemId: 'item-1' });
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+      await service.changeStatus('req-1', { toStatus: 'COMPLETED' } as never, makeUser({}));
+
+      expect(prisma.tx.roomItem.update).toHaveBeenCalledWith({
+        where: { id: 'item-1' },
+        data: { condition: 'GOOD', conditionNote: null },
+      });
+    });
+
+    it('does not touch a room item when the request has none', async () => {
+      const prisma = makePrisma();
+      prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'REPAIRED', roomItemId: null });
+      const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+      await service.changeStatus('req-1', { toStatus: 'COMPLETED' } as never, makeUser({}));
+
+      expect(prisma.tx.roomItem.update).not.toHaveBeenCalled();
     });
   });
 });

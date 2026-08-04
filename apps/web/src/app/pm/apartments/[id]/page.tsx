@@ -12,6 +12,8 @@ import { useMaintenanceRequests } from "@/hooks/use-maintenance";
 import { useApartmentNotes, useCreateNote } from "@/hooks/use-notes";
 import { useShowings, useCreateShowing, useDeleteShowing } from "@/hooks/use-showings";
 import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
+import { ApartmentInventory } from "@/components/apartment-inventory";
+import { InspectButton } from "@/components/apartment-inspection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusChip, apartmentStatusTone, apartmentStatusLabel, paymentStatusTone } from "@/components/status-chip";
@@ -56,12 +58,16 @@ export default function ApartmentDetailPage() {
             <StatusChip tone={apartmentStatusTone(apartment.status)}>{apartmentStatusLabel(apartment.status)}</StatusChip>
           </p>
         </div>
-        <ApartmentFormDialog apartment={apartment} trigger={<Button variant="outline">Edit apartment</Button>} />
+        <div className="flex items-center gap-2">
+          <InspectButton apartmentId={id} />
+          <ApartmentFormDialog apartment={apartment} trigger={<Button variant="outline">Edit apartment</Button>} />
+        </div>
       </div>
 
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="payments">Rent Payments</TabsTrigger>
           <TabsTrigger value="utilities">Utilities</TabsTrigger>
@@ -80,6 +86,10 @@ export default function ApartmentDetailPage() {
             <InfoItem label="Furnished" value={apartment.furnished ?? "—"} />
             <InfoItem label="Extras" value={apartment.extras.length ? apartment.extras.join(", ") : "—"} />
           </div>
+        </TabsContent>
+
+        <TabsContent value="inventory" className="mt-5">
+          <ApartmentInventory apartmentId={id} canEdit={true} />
         </TabsContent>
 
         <TabsContent value="financials" className="mt-5">

@@ -20,6 +20,8 @@ import { UtilityRatesModule } from './utility-rates/utility-rates.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { TasksModule } from './tasks/tasks.module';
 import { ShowingsModule } from './showings/showings.module';
+import { RoomsModule } from './rooms/rooms.module';
+import { InspectionsModule } from './inspections/inspections.module';
 import { NotesModule } from './notes/notes.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -54,6 +56,8 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     MaintenanceModule,
     TasksModule,
     ShowingsModule,
+    RoomsModule,
+    InspectionsModule,
     NotesModule,
     AnalyticsModule,
     NotificationsModule,

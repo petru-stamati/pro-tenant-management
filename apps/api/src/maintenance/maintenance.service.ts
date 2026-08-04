@@ -113,6 +113,7 @@ export class MaintenanceService {
         data: {
           apartmentId: apartment.id,
           ownerId: apartment.ownerId,
+          roomItemId: dto.roomItemId,
           title: dto.title,
           description: dto.description,
           urgent: dto.urgent ?? false,
@@ -122,6 +123,12 @@ export class MaintenanceService {
       await tx.maintenanceStatusEvent.create({
         data: { maintenanceRequestId: request.id, toStatus: 'REPORTED', changedById: reportedBy.id },
       });
+      if (dto.roomItemId) {
+        await tx.roomItem.update({
+          where: { id: dto.roomItemId },
+          data: { condition: 'NEEDS_ATTENTION', conditionNote: dto.title },
+        });
+      }
       return request;
     });
     await this.notifications.notifyRole(
@@ -161,6 +168,12 @@ export class MaintenanceService {
       await tx.maintenanceStatusEvent.create({
         data: { maintenanceRequestId: id, fromStatus: request.status, toStatus: dto.toStatus, note: dto.note, changedById: changedBy.id },
       });
+      if (dto.toStatus === 'COMPLETED' && request.roomItemId) {
+        await tx.roomItem.update({
+          where: { id: request.roomItemId },
+          data: { condition: 'GOOD', conditionNote: null },
+        });
+      }
       return updated;
     });
     if (dto.toStatus === 'COMPLETED') {

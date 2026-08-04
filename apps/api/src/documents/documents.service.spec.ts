@@ -33,10 +33,18 @@ function makeStorage() {
   return { writeFile: jest.fn(), readFile: jest.fn(), fileExists: jest.fn() };
 }
 
+function makeNotifications() {
+  return { notifyRole: jest.fn().mockResolvedValue(undefined) };
+}
+
+function makeApartmentInvoices() {
+  return { create: jest.fn().mockResolvedValue({ id: 'inv-1' }) };
+}
+
 describe('DocumentsService.createUploadUrl', () => {
   it('requires the document to be attached to an apartment, lease, or maintenance request', async () => {
     const prisma = makePrisma();
-    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(
       service.createUploadUrl({ category: 'CONTRACT', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10 } as never, makeUser({})),
@@ -46,7 +54,7 @@ describe('DocumentsService.createUploadUrl', () => {
   it('resolves ownerId from the apartment when apartmentId is given', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' });
-    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     const result = await service.createUploadUrl(
       { apartmentId: 'apt-1', category: 'CONTRACT', fileName: 'lease-signed.pdf', mimeType: 'application/pdf', sizeBytes: 16 } as never,
@@ -63,7 +71,7 @@ describe('DocumentsService.createUploadUrl', () => {
   it('rejects an apartmentId that does not exist', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue(null);
-    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(
       service.createUploadUrl(
@@ -76,7 +84,7 @@ describe('DocumentsService.createUploadUrl', () => {
   it('strips path separators and shell-unsafe characters from the fileName portion of the s3Key', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' });
-    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await service.createUploadUrl(
       { apartmentId: 'apt-1', category: 'CONTRACT', fileName: '../../etc/passwd; rm -rf.pdf', mimeType: 'application/pdf', sizeBytes: 10 } as never,
@@ -96,7 +104,7 @@ describe('DocumentsService.complete', () => {
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     const storage = makeStorage();
     storage.fileExists.mockResolvedValue(false);
-    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(service.complete(makeUser({}), 'doc-1')).rejects.toThrow('Upload has not finished');
   });
@@ -107,7 +115,7 @@ describe('DocumentsService.complete', () => {
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     const storage = makeStorage();
     storage.fileExists.mockResolvedValue(true);
-    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(service.complete(makeUser({}), 'doc-1')).resolves.toMatchObject({ id: 'doc-1' });
   });
@@ -117,7 +125,7 @@ describe('DocumentsService.complete', () => {
     const scoped = { document: { findFirst: jest.fn().mockResolvedValue(null) } };
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     const storage = makeStorage();
-    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, storage as never);
+    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, storage as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(
       service.complete(makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }), 'doc-belonging-to-other-owner'),
@@ -131,7 +139,7 @@ describe('DocumentsService tenant vs PM/owner scoping', () => {
     prisma.client.document.findFirst.mockResolvedValue({ id: 'doc-1', s3Key: 'contract/x.pdf', fileName: 'lease.pdf', mimeType: 'application/pdf' });
     const storage = makeStorage();
     storage.readFile.mockResolvedValue(Buffer.from('data'));
-    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await service.downloadBuffer(makeUser({ roleKey: 'TENANT', tenantId: 'tenant-1' }), 'doc-1');
 
@@ -144,7 +152,7 @@ describe('DocumentsService tenant vs PM/owner scoping', () => {
     const prisma = makePrisma();
     prisma.client.document.findFirst.mockResolvedValue(null);
     const storage = makeStorage();
-    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, storage as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(
       service.downloadBuffer(makeUser({ roleKey: 'TENANT', tenantId: 'tenant-1' }), 'doc-not-mine'),
@@ -158,7 +166,7 @@ describe('DocumentsService tenant vs PM/owner scoping', () => {
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     const storage = makeStorage();
     storage.readFile.mockResolvedValue(Buffer.from('data'));
-    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, storage as never);
+    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, storage as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await service.downloadBuffer(makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }), 'doc-1');
 
@@ -185,7 +193,7 @@ describe('DocumentsService.newVersion', () => {
     };
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-1' });
-    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions() as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await service.newVersion('doc-1', { fileName: 'lease-v2.pdf', mimeType: 'application/pdf', sizeBytes: 20 } as never, makeUser({}));
 
@@ -201,7 +209,7 @@ describe('DocumentsService write-path owner scoping', () => {
   it('rejects createUploadUrl when the target apartment belongs to a different owner than the caller', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-2' });
-    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(
       service.createUploadUrl(
@@ -215,7 +223,7 @@ describe('DocumentsService write-path owner scoping', () => {
   it('allows an ADMIN to upload against any owner', async () => {
     const prisma = makePrisma();
     prisma.client.apartment.findFirst.mockResolvedValue({ id: 'apt-1', ownerId: 'owner-2' });
-    const service = new DocumentsService(prisma as never, makePermissions('all') as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions('all') as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(
       service.createUploadUrl(
@@ -229,11 +237,134 @@ describe('DocumentsService write-path owner scoping', () => {
     const prisma = makePrisma();
     const scoped = { document: { findFirst: jest.fn().mockResolvedValue(null) } };
     (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
-    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, makeStorage() as never);
+    const service = new DocumentsService(prisma as never, makePermissions(['owner-1']) as never, makeStorage() as never, makeNotifications() as never, makeApartmentInvoices() as never);
 
     await expect(
       service.remove(makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }), 'doc-belonging-to-other-owner'),
     ).rejects.toThrow(NotFoundException);
     expect(prisma.client.document.delete).not.toHaveBeenCalled();
+  });
+});
+
+describe('DocumentsService — Owner unassigned invoice uploads', () => {
+  it('lets an OWNER upload an INVOICE with just a periodMonth and no apartment, and notifies the PM', async () => {
+    const prisma = makePrisma();
+    const notifications = makeNotifications();
+    const service = new DocumentsService(
+      prisma as never,
+      makePermissions() as never,
+      makeStorage() as never,
+      notifications as never,
+      makeApartmentInvoices() as never,
+    );
+
+    const result = await service.createUploadUrl(
+      { category: 'INVOICE', periodMonth: '2026-08', fileName: 'aug.pdf', mimeType: 'application/pdf', sizeBytes: 10 } as never,
+      makeUser({ roleKey: 'OWNER', ownerId: 'owner-1' }),
+    );
+
+    expect(result).toMatchObject({ documentId: 'doc-1' });
+    expect(prisma.client.document.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ ownerId: 'owner-1', apartmentId: undefined }) }),
+    );
+    expect(notifications.notifyRole).toHaveBeenCalledWith(
+      'owner-1',
+      'ADMIN',
+      'INVOICES_PENDING_ASSIGNMENT',
+      expect.any(String),
+      expect.any(String),
+      'Document',
+      'doc-1',
+    );
+  });
+
+  it('still rejects an anchor-less upload from a non-OWNER caller even with a periodMonth', async () => {
+    const prisma = makePrisma();
+    const service = new DocumentsService(
+      prisma as never,
+      makePermissions() as never,
+      makeStorage() as never,
+      makeNotifications() as never,
+      makeApartmentInvoices() as never,
+    );
+
+    await expect(
+      service.createUploadUrl(
+        { category: 'INVOICE', periodMonth: '2026-08', fileName: 'aug.pdf', mimeType: 'application/pdf', sizeBytes: 10 } as never,
+        makeUser({ roleKey: 'ADMIN' }),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('DocumentsService.assignInvoice', () => {
+  it('rejects a document that is not an unassigned INVOICE', async () => {
+    const prisma = makePrisma();
+    const scoped = {
+      document: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1', category: 'CONTRACT', apartmentId: null }) },
+    };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new DocumentsService(
+      prisma as never,
+      makePermissions() as never,
+      makeStorage() as never,
+      makeNotifications() as never,
+      makeApartmentInvoices() as never,
+    );
+
+    await expect(
+      service.assignInvoice('doc-1', { apartmentId: 'apt-1' } as never, makeUser({})),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a document that is already assigned to an apartment', async () => {
+    const prisma = makePrisma();
+    const scoped = {
+      document: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1', category: 'INVOICE', apartmentId: 'apt-already' }) },
+    };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const service = new DocumentsService(
+      prisma as never,
+      makePermissions() as never,
+      makeStorage() as never,
+      makeNotifications() as never,
+      makeApartmentInvoices() as never,
+    );
+
+    await expect(
+      service.assignInvoice('doc-1', { apartmentId: 'apt-1' } as never, makeUser({})),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('creates the real invoice and links the document to it', async () => {
+    const prisma = makePrisma();
+    const scoped = {
+      document: { findFirst: jest.fn().mockResolvedValue({ id: 'doc-1', category: 'INVOICE', apartmentId: null }) },
+    };
+    (prisma.forOwnerScope as jest.Mock).mockReturnValue(scoped);
+    const apartmentInvoices = makeApartmentInvoices();
+    const service = new DocumentsService(
+      prisma as never,
+      makePermissions() as never,
+      makeStorage() as never,
+      makeNotifications() as never,
+      apartmentInvoices as never,
+    );
+
+    const dto = {
+      apartmentId: 'apt-1',
+      type: 'RENT',
+      issueDate: '2026-08-01',
+      dueDate: '2026-08-10',
+      periodMonth: '2026-08-01',
+      totalAmountRON: 1000,
+    };
+    await service.assignInvoice('doc-1', dto as never, makeUser({}));
+
+    expect(apartmentInvoices.create).toHaveBeenCalledWith(dto, expect.anything());
+    expect(prisma.client.document.update).toHaveBeenCalledWith({
+      where: { id: 'doc-1' },
+      data: { apartmentId: 'apt-1', apartmentInvoiceId: 'inv-1' },
+    });
   });
 });

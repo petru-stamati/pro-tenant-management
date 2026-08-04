@@ -43,4 +43,13 @@ export class CreateUploadUrlDto {
   @IsOptional()
   @IsString()
   taskId?: string;
+
+  /**
+   * "YYYY-MM" — set only when an Owner uploads an INVOICE with no apartment
+   * chosen yet (the bulk "upload this month's invoices" flow). Lets the PM's
+   * review queue show which month a still-unassigned upload is for.
+   */
+  @IsOptional()
+  @IsString()
+  periodMonth?: string;
 }

@@ -8,7 +8,9 @@ import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
 import { OutstandingDrilldownDialog } from "@/components/outstanding-drilldown-dialog";
+import { UploadInvoicesDialog } from "@/components/invoice-upload-review";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
 import { formatEUR, formatRON } from "@/lib/format";
 
@@ -18,6 +20,7 @@ export default function OwnerDashboardPage() {
   const { data: apartments } = useApartments({ ownerId: user?.ownerId ?? undefined });
   const { data: notifications } = useNotifications();
   const [outstandingDrilldown, setOutstandingDrilldown] = useState(false);
+  const [uploadInvoices, setUploadInvoices] = useState(false);
 
   return (
     <div className="mx-auto max-w-[1200px]">
@@ -28,6 +31,9 @@ export default function OwnerDashboardPage() {
             Your portfolio {summary ? `· ${summary.totalApartments} apartments across Bucharest` : ""}
           </p>
         </div>
+        <Button variant="outline" onClick={() => setUploadInvoices(true)}>
+          + Upload invoices
+        </Button>
       </div>
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-6 rounded-[18px] bg-gradient-to-br from-sidebar to-[#0f5c2a] px-7 py-6 text-white">
@@ -121,6 +127,7 @@ export default function OwnerDashboardPage() {
         </div>
       </div>
       {outstandingDrilldown && <OutstandingDrilldownDialog basePath="/owner" onClose={() => setOutstandingDrilldown(false)} />}
+      {uploadInvoices && <UploadInvoicesDialog onClose={() => setUploadInvoices(false)} />}
     </div>
   );
 }

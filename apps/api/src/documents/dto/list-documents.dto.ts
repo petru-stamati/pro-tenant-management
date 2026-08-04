@@ -1,4 +1,5 @@
-import { IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsOptional, IsString } from 'class-validator';
 import { PaginationQueryDto } from '../../common/pagination';
 
 export class ListDocumentsDto extends PaginationQueryDto {
@@ -29,4 +30,10 @@ export class ListDocumentsDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   taskId?: string;
+
+  /** Owner-uploaded INVOICE documents not yet assigned to an apartment — powers the PM review queue. */
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  unassigned?: boolean;
 }

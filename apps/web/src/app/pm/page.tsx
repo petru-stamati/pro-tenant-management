@@ -9,6 +9,7 @@ import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
 import { RegisterPaymentDialog } from "@/components/payments-board";
 import { OutstandingDrilldownDialog } from "@/components/outstanding-drilldown-dialog";
 import { NewTaskDialog } from "@/components/tasks-board";
+import { ReviewInvoicesDialog } from "@/components/invoice-upload-review";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export default function PmDashboardPage() {
   const { data: notifications } = useNotifications();
   const [registerPayment, setRegisterPayment] = useState(false);
   const [outstandingDrilldown, setOutstandingDrilldown] = useState(false);
+  const [reviewInvoices, setReviewInvoices] = useState(false);
 
   const maxOwnerRevenue = Math.max(1, ...(summary?.revenueByOwner.map((o) => o.monthlyRevenueEUR) ?? [1]));
 
@@ -42,11 +44,15 @@ export default function PmDashboardPage() {
         </div>
         <div className="flex items-center gap-2">
           <NewTaskDialog role="PM" />
+          <Button variant="outline" onClick={() => setReviewInvoices(true)}>
+            Invoices to assign
+          </Button>
           <Button onClick={() => setRegisterPayment(true)}>+ Register payment</Button>
         </div>
       </div>
       {registerPayment && <RegisterPaymentDialog onClose={() => setRegisterPayment(false)} />}
       {outstandingDrilldown && <OutstandingDrilldownDialog basePath="/pm" onClose={() => setOutstandingDrilldown(false)} />}
+      {reviewInvoices && <ReviewInvoicesDialog onClose={() => setReviewInvoices(false)} />}
 
       <div className="mb-6 grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard

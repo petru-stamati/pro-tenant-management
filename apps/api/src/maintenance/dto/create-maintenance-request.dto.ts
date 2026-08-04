@@ -15,4 +15,9 @@ export class CreateMaintenanceRequestDto {
   @IsOptional()
   @IsBoolean()
   urgent?: boolean;
+
+  /** Set when reported via the "report a problem" button on a specific inventory item. */
+  @IsOptional()
+  @IsString()
+  roomItemId?: string;
 }

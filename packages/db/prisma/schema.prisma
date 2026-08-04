@@ -160,6 +160,7 @@ model User {
   createdTasks                 Task[]                   @relation("TaskCreatedBy")
   taskComments                 TaskComment[]            @relation("TaskCommentAuthor")
   loggedShowings                Showing[]               @relation("ShowingCreatedBy")
+  performedInspections          Inspection[]            @relation("InspectionPerformedBy")
 
   /// Bumped to instantly invalidate every outstanding access token for this
   /// user (e.g. an admin force-disables a compromised account) without
@@ -241,6 +242,8 @@ model Owner {
   paymentConfirmations PaymentConfirmation[]
   tasks                Task[]
   showings             Showing[]
+  roomRecords          Room[]
+  inspections          Inspection[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -305,6 +308,8 @@ model Apartment {
   paymentConfirmations PaymentConfirmation[]
   tasks                Task[]
   showings             Showing[]
+  roomRecords          Room[]
+  inspections          Inspection[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -340,6 +345,145 @@ model Showing {
   @@index([apartmentId])
   @@index([ownerId])
   @@index([deletedAt])
+}
+
+// =========================================================================
+// APARTMENT INVENTORY & INSPECTIONS
+// =========================================================================
+
+enum RoomType {
+  BEDROOM
+  BATHROOM
+  KITCHEN
+  HALLWAY
+  LIVING_ROOM
+  OTHER
+}
+
+/// GOOD is the default and what CONFIRMED_GOOD inspection results restore it
+/// to. NEEDS_ATTENTION is set either by an open maintenance request against
+/// this item, or by an inspection that found it not in great shape (stained
+/// walls, worn mattress, etc.) without it being replaced or removed outright.
+enum ItemCondition {
+  GOOD
+  NEEDS_ATTENTION
+}
+
+/// A named space inside an apartment (PM's own grouping, e.g. "Bedroom 1",
+/// "Kitchen") holding a free-text list of what's in it (RoomItem). Furnished
+/// status on the Apartment itself is derived from these, not set by hand.
+model Room {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized, see file header
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+
+  type         RoomType
+  label        String
+  notFurnished Boolean  @default(false)
+
+  items RoomItem[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+/// One free-text line inside a Room — "1 dishwasher", "1 fridge" — the unit
+/// of both "report a problem with this" (MaintenanceRequest.roomItemId) and
+/// inspection checklists (InspectionResult.roomItemId).
+model RoomItem {
+  id     String @id @default(cuid())
+  roomId String
+
+  room Room @relation(fields: [roomId], references: [id])
+
+  name          String
+  condition     ItemCondition @default(GOOD)
+  conditionNote String?
+
+  maintenanceRequests MaintenanceRequest[]
+  inspectionResults   InspectionResult[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([roomId])
+  @@index([deletedAt])
+}
+
+enum InspectionStatus {
+  /// Some items checked, some not yet — PM can save progress and resume
+  /// later rather than having to finish the whole apartment in one sitting.
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InspectionOutcome {
+  /// Checked, no issues — resets the item's condition to GOOD.
+  CONFIRMED_GOOD
+  /// Checked, not in great shape but still there (needs paint, a bit worn,
+  /// etc.) — sets condition to NEEDS_ATTENTION with `note` as the reason.
+  NEEDS_ATTENTION
+  /// Swapped for a new one — RoomItem.name is overwritten, `previousItemName`
+  /// keeps what it replaced for history, condition resets to GOOD.
+  REPLACED
+  /// No longer in the apartment — RoomItem is soft-deleted, `note` holds why.
+  REMOVED
+}
+
+model Inspection {
+  id          String @id @default(cuid())
+  apartmentId String
+  ownerId     String // denormalized, see file header
+
+  apartment Apartment @relation(fields: [apartmentId], references: [id])
+  owner     Owner     @relation(fields: [ownerId], references: [id])
+
+  status      InspectionStatus @default(IN_PROGRESS)
+  notes       String?
+  completedAt DateTime?
+
+  performedById String
+  performedBy   User   @relation("InspectionPerformedBy", fields: [performedById], references: [id])
+
+  results InspectionResult[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([apartmentId])
+  @@index([ownerId])
+  @@index([deletedAt])
+}
+
+/// Append-only — one row per item checked during an inspection, kept even
+/// after the item is later replaced/removed so the apartment retains full
+/// inspection history (mirrors MaintenanceStatusEvent's append-only design).
+model InspectionResult {
+  id           String @id @default(cuid())
+  inspectionId String
+  roomItemId   String
+
+  inspection Inspection @relation(fields: [inspectionId], references: [id])
+  roomItem   RoomItem   @relation(fields: [roomItemId], references: [id])
+
+  outcome          InspectionOutcome
+  note             String?
+  previousItemName String?
+
+  createdAt DateTime @default(now())
+
+  @@index([inspectionId])
+  @@index([roomItemId])
 }
 
 // =========================================================================
@@ -707,6 +851,13 @@ model Document {
   sizeBytes Int
   s3Key     String @unique
 
+  /// Set only on Owner-uploaded INVOICE documents that don't have an
+  /// apartmentId yet ("unassigned" — Owner picked a billing month but not
+  /// which apartment/tenant it's for). Cleared in spirit once the PM assigns
+  /// it to a real ApartmentInvoice (apartmentId/apartmentInvoiceId get set),
+  /// though the field itself is left as a record of what the Owner intended.
+  periodMonth DateTime? @db.Date
+
   version           Int       @default(1)
   previousVersionId String?   @unique
   previousVersion   Document? @relation("DocumentVersion", fields: [previousVersionId], references: [id])
@@ -892,9 +1043,14 @@ model MaintenanceRequest {
   id          String @id @default(cuid())
   apartmentId String
   ownerId     String // denormalized
+  /// Optional — set when reported via the "report a problem" button on a
+  /// specific inventory item rather than freeform. Marks the item
+  /// NEEDS_ATTENTION while open (see maintenance.service.ts).
+  roomItemId  String?
 
   apartment Apartment @relation(fields: [apartmentId], references: [id])
   owner     Owner     @relation(fields: [ownerId], references: [id])
+  roomItem  RoomItem? @relation(fields: [roomItemId], references: [id])
 
   title        String
   description  String
@@ -918,6 +1074,7 @@ model MaintenanceRequest {
   @@index([apartmentId])
   @@index([ownerId])
   @@index([status])
+  @@index([roomItemId])
   @@index([deletedAt])
 }
 
@@ -1132,6 +1289,8 @@ enum NotificationType {
   PROPOSAL_DECIDED
   TASK_ASSIGNED
   TASK_COMPLETED
+  INSPECTION_COMPLETED
+  INVOICES_PENDING_ASSIGNMENT
 }
 
 enum NotificationChannel {
