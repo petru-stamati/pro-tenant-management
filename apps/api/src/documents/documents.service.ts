@@ -74,7 +74,7 @@ export class DocumentsService {
   }
 
   async createUploadUrl(dto: CreateUploadUrlDto, uploadedBy: AuthenticatedUser) {
-    let ownerId = await this.resolveOwnerId(dto);
+    let { ownerId, apartmentId } = await this.resolveOwnerAndApartmentId(dto);
 
     // The Owner's bulk "upload this month's invoices" flow — no apartment
     // chosen yet, just a billing month. `ownerId` here is the caller's own
@@ -99,7 +99,10 @@ export class DocumentsService {
       data: {
         category: dto.category,
         ownerId,
-        apartmentId: dto.apartmentId,
+        // Resolved transitively when only apartmentInvoiceId/paymentConfirmationId/etc
+        // was given, so apartment-scoped filtering (Documents tab) still finds it —
+        // otherwise every invoice/receipt upload would have a NULL apartmentId.
+        apartmentId,
         leaseId: dto.leaseId,
         maintenanceRequestId: dto.maintenanceRequestId,
         utilityRecordId: dto.utilityRecordId,
@@ -187,7 +190,10 @@ export class DocumentsService {
 
   async newVersion(id: string, dto: CreateUploadUrlDto, uploadedBy: AuthenticatedUser) {
     const previous = await this.assertExistsScoped(uploadedBy, id);
-    const ownerId = await this.resolveOwnerId({ ...dto, apartmentId: dto.apartmentId ?? previous.apartmentId ?? undefined });
+    const { ownerId } = await this.resolveOwnerAndApartmentId({
+      ...dto,
+      apartmentId: dto.apartmentId ?? previous.apartmentId ?? undefined,
+    });
     await this.assertOwnerAccess(uploadedBy, ownerId);
     const s3Key = `${previous.category.toLowerCase()}/${randomBytes(8).toString('hex')}-${sanitize(dto.fileName)}`;
 
@@ -216,7 +222,14 @@ export class DocumentsService {
     return { success: true };
   }
 
-  private async resolveOwnerId(dto: {
+  /**
+   * Resolves both ownerId and apartmentId from whichever single FK the
+   * caller gave us — every one of these entities is itself apartment-scoped,
+   * so a document attached only via e.g. apartmentInvoiceId still belongs to
+   * a real apartment and must carry that apartmentId directly (not just the
+   * FK) or the Documents tab's "filter by apartment" can never find it.
+   */
+  private async resolveOwnerAndApartmentId(dto: {
     apartmentId?: string;
     leaseId?: string;
     maintenanceRequestId?: string;
@@ -224,45 +237,45 @@ export class DocumentsService {
     apartmentInvoiceId?: string;
     paymentConfirmationId?: string;
     taskId?: string;
-  }) {
+  }): Promise<{ ownerId: string | undefined; apartmentId: string | undefined }> {
     if (dto.apartmentId) {
       const apartment = await this.prisma.client.apartment.findFirst({ where: { id: dto.apartmentId } });
       if (!apartment) throw new BadRequestException('Apartment not found');
-      return apartment.ownerId;
+      return { ownerId: apartment.ownerId, apartmentId: apartment.id };
     }
     if (dto.leaseId) {
       const lease = await this.prisma.client.lease.findFirst({ where: { id: dto.leaseId } });
       if (!lease) throw new BadRequestException('Lease not found');
-      return lease.ownerId;
+      return { ownerId: lease.ownerId, apartmentId: lease.apartmentId };
     }
     if (dto.maintenanceRequestId) {
       const request = await this.prisma.client.maintenanceRequest.findFirst({ where: { id: dto.maintenanceRequestId } });
       if (!request) throw new BadRequestException('Maintenance request not found');
-      return request.ownerId;
+      return { ownerId: request.ownerId, apartmentId: request.apartmentId };
     }
     if (dto.utilityRecordId) {
       const record = await this.prisma.client.utilityRecord.findFirst({ where: { id: dto.utilityRecordId } });
       if (!record) throw new BadRequestException('Utility record not found');
-      return record.ownerId;
+      return { ownerId: record.ownerId, apartmentId: record.apartmentId };
     }
     if (dto.apartmentInvoiceId) {
       const invoice = await this.prisma.client.apartmentInvoice.findFirst({ where: { id: dto.apartmentInvoiceId } });
       if (!invoice) throw new BadRequestException('Invoice not found');
-      return invoice.ownerId;
+      return { ownerId: invoice.ownerId, apartmentId: invoice.apartmentId };
     }
     if (dto.paymentConfirmationId) {
       const confirmation = await this.prisma.client.paymentConfirmation.findFirst({
         where: { id: dto.paymentConfirmationId },
       });
       if (!confirmation) throw new BadRequestException('Payment confirmation not found');
-      return confirmation.ownerId;
+      return { ownerId: confirmation.ownerId, apartmentId: confirmation.apartmentId };
     }
     if (dto.taskId) {
       const task = await this.prisma.client.task.findFirst({ where: { id: dto.taskId } });
       if (!task) throw new BadRequestException('Task not found');
-      return task.ownerId;
+      return { ownerId: task.ownerId, apartmentId: task.apartmentId ?? undefined };
     }
-    return undefined;
+    return { ownerId: undefined, apartmentId: undefined };
   }
 
   private async scopedFind(user: AuthenticatedUser, id: string) {

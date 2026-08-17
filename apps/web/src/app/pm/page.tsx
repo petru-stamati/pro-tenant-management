@@ -36,7 +36,7 @@ export default function PmDashboardPage() {
     <div className="mx-auto max-w-[1200px]">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[23px] font-semibold">Good morning, {user?.firstName}</h1>
+          <h1 className="text-[23px] font-semibold">Welcome back, {user?.firstName}</h1>
           <p className="text-[13.5px] text-muted-foreground">
             {summary ? `${summary.totalApartments} apartments` : "…"} ·{" "}
             {new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long" }).format(new Date())}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useOwnerSummary } from "@/hooks/use-analytics";
 import { useApartments } from "@/hooks/use-apartments";
+import { useOwners } from "@/hooks/use-owners";
 import { useNotifications } from "@/hooks/use-notifications";
 import { KpiCard } from "@/components/kpi-card";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
@@ -18,15 +19,22 @@ export default function OwnerDashboardPage() {
   const { user } = useAuth();
   const { data: summary, isLoading: summaryLoading } = useOwnerSummary(user?.ownerId ?? undefined);
   const { data: apartments } = useApartments({ ownerId: user?.ownerId ?? undefined });
+  const { data: owners } = useOwners();
   const { data: notifications } = useNotifications();
   const [outstandingDrilldown, setOutstandingDrilldown] = useState(false);
+
+  // Owner.contactName is the name the PM deliberately typed in when setting
+  // up this owner — more reliable than the linked login's own firstName,
+  // which may just be placeholder text from when the account was created.
+  const owner = owners?.data.find((o) => o.id === user?.ownerId);
+  const displayName = owner?.contactName?.split(/\s+/)[0] || user?.firstName;
   const [uploadInvoices, setUploadInvoices] = useState(false);
 
   return (
     <div className="mx-auto max-w-[1200px]">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[23px] font-semibold">Welcome back, {user?.firstName}</h1>
+          <h1 className="text-[23px] font-semibold">Welcome back, {displayName}</h1>
           <p className="text-[13.5px] text-muted-foreground">
             Your portfolio {summary ? `· ${summary.totalApartments} apartments across Bucharest` : ""}
           </p>

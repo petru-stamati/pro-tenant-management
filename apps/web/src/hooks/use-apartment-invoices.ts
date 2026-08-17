@@ -39,7 +39,12 @@ export interface ApartmentInvoice {
   autoExtracted: boolean;
   documents?: ApartmentInvoiceDocument[];
   applications?: PaymentApplicationWithConfirmation[];
-  apartment?: { id: string; ownerId: string; name: string };
+  apartment?: {
+    id: string;
+    ownerId: string;
+    name: string;
+    currentLease?: { tenant?: { id: string; firstName: string; lastName: string } | null } | null;
+  };
 }
 
 export function useApartmentInvoices(

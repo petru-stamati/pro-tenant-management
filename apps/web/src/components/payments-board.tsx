@@ -12,7 +12,7 @@ import {
 import { useCreatePaymentConfirmation, type PaymentMethod } from "@/hooks/use-payment-confirmations";
 import { useApartments, useApartment } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
-import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
+import { useDocuments, useUploadDocument, useDeleteDocument, downloadDocument } from "@/hooks/use-documents";
 import { UploadInvoicesDialog, ReviewInvoicesDialog } from "@/components/invoice-upload-review";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -134,7 +134,7 @@ export function PaymentsBoard({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                <th className="p-3 font-medium text-muted-foreground">Apartment</th>
+                <th className="p-3 font-medium text-muted-foreground">Tenant</th>
                 <th className="p-3 font-medium text-muted-foreground">Invoices this month</th>
                 <th className="p-3 font-medium text-muted-foreground">Outstanding</th>
                 <th className="p-3 font-medium text-muted-foreground">Actions</th>
@@ -155,8 +155,12 @@ export function PaymentsBoard({
                 return (
                   <tr key={a.id} className="border-b border-border last:border-0 align-top">
                     <td className="p-3">
-                      <div className="font-medium">{a.name}</div>
-                      <div className="text-[11.5px] text-muted-foreground">{ownerName(a.ownerId)}</div>
+                      <div className="font-medium">
+                        {a.currentLease?.tenant ? `${a.currentLease.tenant.firstName} ${a.currentLease.tenant.lastName}` : a.name}
+                      </div>
+                      <div className="text-[11.5px] text-muted-foreground">
+                        {a.currentLease?.tenant ? `${a.name} · ${ownerName(a.ownerId)}` : ownerName(a.ownerId)}
+                      </div>
                     </td>
                     <td className="p-3">
                       {apartmentInvoices.length > 0 ? (
@@ -418,6 +422,7 @@ export function InvoiceDetailDialog({
   const { data: documents } = useDocuments({ apartmentInvoiceId: invoice.id });
   const upload = useUploadDocument();
   const update = useUpdateApartmentInvoice();
+  const deleteDocument = useDeleteDocument();
   const [type, setType] = useState<ApartmentInvoiceType>(invoice.type);
   const [invoiceNumber, setInvoiceNumber] = useState(invoice.invoiceNumber ?? "");
   const [issueDate, setIssueDate] = useState(invoice.issueDate.slice(0, 10));
@@ -456,6 +461,16 @@ export function InvoiceDetailDialog({
     }
   }
 
+  async function handleDeleteDocument(id: string) {
+    if (!window.confirm("Delete this document? This can't be undone.")) return;
+    try {
+      await deleteDocument.mutateAsync(id);
+      toast.success("Document deleted");
+    } catch {
+      toast.error("Could not delete document");
+    }
+  }
+
   async function handleSave() {
     try {
       await update.mutateAsync({
@@ -479,8 +494,14 @@ export function InvoiceDetailDialog({
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>
-            {TYPE_LABEL[invoice.type]} invoice — {invoice.apartment?.name}
+            {TYPE_LABEL[invoice.type]} invoice —{" "}
+            {invoice.apartment?.currentLease?.tenant
+              ? `${invoice.apartment.currentLease.tenant.firstName} ${invoice.apartment.currentLease.tenant.lastName}`
+              : invoice.apartment?.name}
           </DialogTitle>
+          {invoice.apartment?.currentLease?.tenant && (
+            <p className="text-[12px] text-muted-foreground">{invoice.apartment.name}</p>
+          )}
         </DialogHeader>
         <div className="flex flex-col gap-3.5 text-[13.5px]">
           <div className="flex items-center justify-between">
@@ -579,14 +600,26 @@ export function InvoiceDetailDialog({
                     {app.paymentConfirmation.documents && app.paymentConfirmation.documents.length > 0 && (
                       <div className="mt-1.5 flex flex-col gap-1">
                         {app.paymentConfirmation.documents.map((d) => (
-                          <button
-                            key={d.id}
-                            disabled={downloading}
-                            onClick={() => handleView(d.id, d.fileName)}
-                            className="truncate rounded-md border border-border px-2 py-1 text-left text-[11.5px] hover:border-primary"
-                          >
-                            {d.fileName}
-                          </button>
+                          <div key={d.id} className="flex items-center gap-1">
+                            <button
+                              disabled={downloading}
+                              onClick={() => handleView(d.id, d.fileName)}
+                              className="flex-1 truncate rounded-md border border-border px-2 py-1 text-left text-[11.5px] hover:border-primary"
+                            >
+                              {d.fileName}
+                            </button>
+                            {canEdit && (
+                              <button
+                                type="button"
+                                disabled={deleteDocument.isPending}
+                                onClick={() => handleDeleteDocument(d.id)}
+                                className="rounded-md border border-border px-2 py-1 text-[11.5px] text-destructive hover:border-destructive"
+                                title="Delete document"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}
@@ -603,14 +636,26 @@ export function InvoiceDetailDialog({
             {documents && documents.data.length > 0 ? (
               <div className="flex flex-col gap-1.5">
                 {documents.data.map((d) => (
-                  <button
-                    key={d.id}
-                    disabled={downloading}
-                    onClick={() => handleView(d.id, d.fileName)}
-                    className="truncate rounded-md border border-border px-2.5 py-1.5 text-left text-[12.5px] hover:border-primary"
-                  >
-                    {d.fileName}
-                  </button>
+                  <div key={d.id} className="flex items-center gap-1.5">
+                    <button
+                      disabled={downloading}
+                      onClick={() => handleView(d.id, d.fileName)}
+                      className="flex-1 truncate rounded-md border border-border px-2.5 py-1.5 text-left text-[12.5px] hover:border-primary"
+                    >
+                      {d.fileName}
+                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        disabled={deleteDocument.isPending}
+                        onClick={() => handleDeleteDocument(d.id)}
+                        className="rounded-md border border-border px-2.5 py-1.5 text-[12.5px] text-destructive hover:border-destructive"
+                        title="Delete document"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             ) : (

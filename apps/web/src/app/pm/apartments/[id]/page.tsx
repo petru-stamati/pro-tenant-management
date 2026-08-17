@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { useAuth } from "@/lib/auth-context";
 import { useApartment, useTenantHistory } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
-import { useRentPayments } from "@/hooks/use-rent-payments";
 import { useUtilityRecords } from "@/hooks/use-utility-records";
 import { useMaintenanceRequests } from "@/hooks/use-maintenance";
 import { useApartmentNotes, useCreateNote } from "@/hooks/use-notes";
@@ -69,7 +68,6 @@ export default function ApartmentDetailPage() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
-          <TabsTrigger value="payments">Rent Payments</TabsTrigger>
           <TabsTrigger value="utilities">Utilities</TabsTrigger>
           <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           <TabsTrigger value="showings">Showings</TabsTrigger>
@@ -94,10 +92,6 @@ export default function ApartmentDetailPage() {
 
         <TabsContent value="financials" className="mt-5">
           <ApartmentFinancialsTab apartmentId={id} canEdit={true} />
-        </TabsContent>
-
-        <TabsContent value="payments" className="mt-5">
-          <RentPaymentsTab apartmentId={id} />
         </TabsContent>
 
         <TabsContent value="utilities" className="mt-5">
@@ -137,40 +131,6 @@ function InfoItem({ label, value }: { label: string; value: string }) {
 
 function Panel({ children }: { children: React.ReactNode }) {
   return <div className="rounded-[14px] border border-border bg-card p-5 shadow-sm">{children}</div>;
-}
-
-function RentPaymentsTab({ apartmentId }: { apartmentId: string }) {
-  const { data, isLoading } = useRentPayments({ apartmentId });
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (!data || data.data.length === 0) return <Panel><p className="text-sm text-muted-foreground">No rent payments recorded yet.</p></Panel>;
-  return (
-    <Panel>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Due Date</TableHead>
-            <TableHead>Rent</TableHead>
-            <TableHead>Paid</TableHead>
-            <TableHead>Outstanding</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.data.map((p) => (
-            <TableRow key={p.id}>
-              <TableCell className="font-mono-tabular font-mono">{dateFormatter.format(new Date(p.dueDate))}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{formatEUR(p.rentAmountEUR)}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{formatEUR(p.paidAmountEUR)}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{formatEUR(p.outstandingAmountEUR)}</TableCell>
-              <TableCell>
-                <StatusChip tone={paymentStatusTone(p.status)}>{p.status.replace("_", " ").toLowerCase()}</StatusChip>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Panel>
-  );
 }
 
 function UtilitiesTab({ apartmentId }: { apartmentId: string }) {

@@ -13,9 +13,14 @@ export function OutstandingDrilldownDialog({ basePath, onClose }: { basePath: "/
   const { data: invoices, isLoading } = useApartmentInvoices({ outstandingOnly: true });
 
   const byApartment = useMemo(() => {
-    const map = new Map<string, { name: string; invoices: ApartmentInvoice[] }>();
+    const map = new Map<string, { name: string; tenantName: string | null; invoices: ApartmentInvoice[] }>();
     for (const inv of invoices?.data ?? []) {
-      const entry = map.get(inv.apartmentId) ?? { name: inv.apartment?.name ?? "—", invoices: [] };
+      const tenant = inv.apartment?.currentLease?.tenant;
+      const entry = map.get(inv.apartmentId) ?? {
+        name: inv.apartment?.name ?? "—",
+        tenantName: tenant ? `${tenant.firstName} ${tenant.lastName}` : null,
+        invoices: [],
+      };
       entry.invoices.push(inv);
       map.set(inv.apartmentId, entry);
     }
@@ -23,6 +28,7 @@ export function OutstandingDrilldownDialog({ basePath, onClose }: { basePath: "/
       .map(([apartmentId, entry]) => ({
         apartmentId,
         name: entry.name,
+        tenantName: entry.tenantName,
         invoices: entry.invoices.sort((a, b) => a.periodMonth.localeCompare(b.periodMonth)),
         total: entry.invoices.reduce((sum, inv) => sum + Number(inv.outstandingAmountRON), 0),
       }))
@@ -49,7 +55,10 @@ export function OutstandingDrilldownDialog({ basePath, onClose }: { basePath: "/
                 className="rounded-md border border-border p-3 text-[13px] hover:border-primary"
               >
                 <div className="mb-1.5 flex items-center justify-between">
-                  <span className="font-medium">{a.name}</span>
+                  <div>
+                    <div className="font-medium">{a.tenantName ?? a.name}</div>
+                    {a.tenantName && <div className="text-[11px] text-muted-foreground">{a.name}</div>}
+                  </div>
                   <span className="font-mono-tabular font-mono font-semibold">{formatRON(a.total)}</span>
                 </div>
                 <div className="flex flex-col gap-1">

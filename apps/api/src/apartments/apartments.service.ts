@@ -52,7 +52,7 @@ export class ApartmentsService {
     const [data, total] = await Promise.all([
       scoped.apartment.findMany({
         where,
-        include: { currentLease: true },
+        include: { currentLease: { include: { tenant: true } } },
         orderBy: { createdAt: 'desc' },
         ...skipTake(page, pageSize),
       }),

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { useApartment, useTenantHistory } from "@/hooks/use-apartments";
-import { useInvoices } from "@/hooks/use-invoices";
 import { useLeases } from "@/hooks/use-leases";
 import { useDocuments, downloadDocument, type DocumentItem } from "@/hooks/use-documents";
 import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
@@ -12,8 +11,8 @@ import { ApartmentInventory } from "@/components/apartment-inventory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { StatusChip, apartmentStatusTone, apartmentStatusLabel, paymentStatusTone, invoiceStatusTone } from "@/components/status-chip";
-import { formatEUR, formatRON, dateFormatter } from "@/lib/format";
+import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
+import { formatEUR, dateFormatter } from "@/lib/format";
 
 export default function OwnerApartmentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,7 +39,6 @@ export default function OwnerApartmentDetailPage() {
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
-          <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="lease">Current Lease</TabsTrigger>
           <TabsTrigger value="history">Previous Tenants</TabsTrigger>
         </TabsList>
@@ -66,10 +64,6 @@ export default function OwnerApartmentDetailPage() {
 
         <TabsContent value="photos" className="mt-5">
           <PhotosTab apartmentId={id} />
-        </TabsContent>
-
-        <TabsContent value="invoices" className="mt-5">
-          <InvoicesTab apartmentId={id} />
         </TabsContent>
 
         <TabsContent value="lease" className="mt-5">
@@ -144,46 +138,6 @@ function PhotoCard({ doc }: { doc: DocumentItem }) {
       <div className="mb-1 truncate text-[12px] font-medium">{doc.fileName}</div>
       <div className="text-[11px] text-muted-foreground">{dateFormatter.format(new Date(doc.createdAt))}</div>
     </button>
-  );
-}
-
-function InvoicesTab({ apartmentId }: { apartmentId: string }) {
-  const { data, isLoading } = useInvoices({ apartmentId });
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (!data || data.data.length === 0) {
-    return (
-      <Panel>
-        <p className="text-sm text-muted-foreground">No invoices yet.</p>
-      </Panel>
-    );
-  }
-  return (
-    <Panel>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Amount (EUR)</TableHead>
-            <TableHead>Amount (RON)</TableHead>
-            <TableHead>Rate</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.data.map((inv) => (
-            <TableRow key={inv.id}>
-              <TableCell className="font-mono-tabular font-mono">{dateFormatter.format(new Date(inv.invoiceDate))}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{formatEUR(inv.amountEUR)}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{formatRON(inv.amountRON)}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{inv.exchangeRateRON}</TableCell>
-              <TableCell>
-                <StatusChip tone={invoiceStatusTone(inv.status)}>{inv.status.toLowerCase()}</StatusChip>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Panel>
   );
 }
 

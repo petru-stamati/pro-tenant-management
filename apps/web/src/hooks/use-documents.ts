@@ -110,6 +110,14 @@ export function useUploadDocument() {
   });
 }
 
+export function useDeleteDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch(`/documents/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["documents"] }),
+  });
+}
+
 export interface AssignInvoiceInput {
   id: string;
   apartmentId: string;

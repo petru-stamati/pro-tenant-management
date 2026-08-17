@@ -28,7 +28,7 @@ export class ApartmentInvoicesService {
       scoped.apartmentInvoice.findMany({
         where,
         include: {
-          apartment: true,
+          apartment: { include: { currentLease: { include: { tenant: true } } } },
           documents: true,
           applications: {
             orderBy: { createdAt: 'desc' },

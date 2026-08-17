@@ -51,6 +51,18 @@ export function useCreateTenant() {
   });
 }
 
+export function useUpdateTenant(tenantId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Partial<TenantInput>) =>
+      apiFetch<Tenant>(`/tenants/${tenantId}`, { method: "PATCH", body: JSON.stringify(input) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tenants"] });
+      queryClient.invalidateQueries({ queryKey: ["leases"] });
+    },
+  });
+}
+
 export function useInviteTenant(tenantId: string) {
   return useMutation({
     mutationFn: (leaseId: string) =>

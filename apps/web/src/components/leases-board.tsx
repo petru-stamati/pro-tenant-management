@@ -12,7 +12,7 @@ import {
 } from "@/hooks/use-leases";
 import { useApartments, type ApartmentSummary } from "@/hooks/use-apartments";
 import { useOwners } from "@/hooks/use-owners";
-import { useCreateTenant } from "@/hooks/use-tenants";
+import { useCreateTenant, useUpdateTenant } from "@/hooks/use-tenants";
 import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -236,10 +236,20 @@ function LeaseDocumentDialog({ lease, onClose }: { lease: LeaseWithApartment; on
 function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
   const [mode, setMode] = useState<"edit" | "renew" | "terminate" | null>(null);
   const update = useUpdateLease(lease.id);
+  const updateTenant = useUpdateTenant(lease.tenant?.id ?? "");
   const renew = useRenewLease(lease.id);
   const terminate = useTerminateLease(lease.id);
   const upload = useUploadDocument();
-  const [editForm, setEditForm] = useState({ rentVatIncluded: lease.rentVatIncluded, autoRenewal: lease.autoRenewal });
+  const [editForm, setEditForm] = useState({
+    rentAmountEUR: lease.rentAmountEUR,
+    depositAmountEUR: lease.depositAmountEUR,
+    rentVatIncluded: lease.rentVatIncluded,
+    autoRenewal: lease.autoRenewal,
+  });
+  const [tenantForm, setTenantForm] = useState({
+    firstName: lease.tenant?.firstName ?? "",
+    lastName: lease.tenant?.lastName ?? "",
+  });
   const [renewForm, setRenewForm] = useState({ startDate: "", endDate: "", rentAmountEUR: lease.rentAmountEUR });
   const [renewalFile, setRenewalFile] = useState<File | null>(null);
   const [reason, setReason] = useState("");
@@ -249,7 +259,18 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
     e.preventDefault();
     setError(null);
     try {
-      await update.mutateAsync(editForm);
+      await update.mutateAsync({
+        rentAmountEUR: Number(editForm.rentAmountEUR),
+        depositAmountEUR: Number(editForm.depositAmountEUR),
+        rentVatIncluded: editForm.rentVatIncluded,
+        autoRenewal: editForm.autoRenewal,
+      });
+      if (
+        lease.tenant &&
+        (tenantForm.firstName !== lease.tenant.firstName || tenantForm.lastName !== lease.tenant.lastName)
+      ) {
+        await updateTenant.mutateAsync({ firstName: tenantForm.firstName, lastName: tenantForm.lastName });
+      }
       toast.success("Lease updated");
       setMode(null);
     } catch (err) {
@@ -295,9 +316,46 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
         <DialogTrigger render={<Button variant="outline" size="sm" />}>Edit</DialogTrigger>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Edit lease terms — {lease.apartment.name}</DialogTitle>
+            <DialogTitle>Edit lease — {lease.apartment.name}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEdit} className="flex flex-col gap-4">
+            {lease.tenant && (
+              <div className="flex flex-col gap-2 border-b border-border pb-3.5">
+                <Label>Tenant name</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    placeholder="First name"
+                    value={tenantForm.firstName}
+                    onChange={(e) => setTenantForm((f) => ({ ...f, firstName: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="Last name"
+                    value={tenantForm.lastName}
+                    onChange={(e) => setTenantForm((f) => ({ ...f, lastName: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label>Rent (EUR)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editForm.rentAmountEUR}
+                  onChange={(e) => setEditForm((f) => ({ ...f, rentAmountEUR: e.target.value }))}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Deposit (EUR)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editForm.depositAmountEUR}
+                  onChange={(e) => setEditForm((f) => ({ ...f, depositAmountEUR: e.target.value }))}
+                />
+              </div>
+            </div>
             <label className="flex items-center gap-1.5 text-[13px]">
               <input
                 type="checkbox"

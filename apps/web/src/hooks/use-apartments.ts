@@ -16,6 +16,7 @@ export interface ApartmentSummary {
     rentAmountEUR: string;
     tenantId: string;
     endDate: string;
+    tenant?: { id: string; firstName: string; lastName: string } | null;
   } | null;
   creditBalanceRON: string;
 }
