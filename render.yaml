@@ -37,3 +37,14 @@ services:
         value: "30"
       - key: CORS_ORIGIN
         sync: false
+      # Cloudflare R2 — real document storage. Without these, DocumentsModule
+      # falls back to local disk, which Render wipes on every deploy/sleep
+      # (see documents.module.ts). Set these in the Render dashboard.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false

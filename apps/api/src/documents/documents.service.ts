@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../common/permissions.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ApartmentInvoicesService } from '../apartment-invoices/apartment-invoices.service';
-import { LocalStorageService } from './local-storage.service';
+import { StorageService } from './storage.service';
 import { AuthenticatedUser } from '../common/types/authenticated-user';
 import { paginate, skipTake } from '../common/pagination';
 import { CreateUploadUrlDto } from './dto/create-upload-url.dto';
@@ -16,7 +16,7 @@ export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
-    private readonly storage: LocalStorageService,
+    private readonly storage: StorageService,
     private readonly notifications: NotificationsService,
     private readonly apartmentInvoices: ApartmentInvoicesService,
   ) {}

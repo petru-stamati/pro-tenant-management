@@ -13,6 +13,7 @@ import { useShowings, useCreateShowing, useDeleteShowing } from "@/hooks/use-sho
 import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { ApartmentInventory } from "@/components/apartment-inventory";
 import { ApartmentPhotosTab } from "@/components/apartment-photos-tab";
+import { ApartmentOverview } from "@/components/apartment-overview";
 import { InspectButton } from "@/components/apartment-inspection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -64,9 +65,10 @@ export default function ApartmentDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="general">
+      <ApartmentOverview apartment={apartment} />
+
+      <Tabs defaultValue="photos">
         <TabsList>
-          <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
@@ -76,17 +78,6 @@ export default function ApartmentDetailPage() {
           <TabsTrigger value="history">Tenant History</TabsTrigger>
           {user?.role === "ADMIN" && <TabsTrigger value="notes">Notes 🔒</TabsTrigger>}
         </TabsList>
-
-        <TabsContent value="general" className="mt-5">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <InfoItem label="Building" value={apartment.building ?? "—"} />
-            <InfoItem label="Floor" value={apartment.floor ? `${apartment.floor} of ${apartment.totalFloors ?? "—"}` : "—"} />
-            <InfoItem label="Surface" value={apartment.surfaceM2 ? `${apartment.surfaceM2} m²` : "—"} />
-            <InfoItem label="Rooms" value={apartment.rooms ?? "—"} />
-            <InfoItem label="Furnished" value={apartment.furnished ?? "—"} />
-            <InfoItem label="Extras" value={apartment.extras.length ? apartment.extras.join(", ") : "—"} />
-          </div>
-        </TabsContent>
 
         <TabsContent value="photos" className="mt-5">
           <ApartmentPhotosTab apartmentId={id} canEdit={true} />
@@ -122,15 +113,6 @@ export default function ApartmentDetailPage() {
           </TabsContent>
         )}
       </Tabs>
-    </div>
-  );
-}
-
-function InfoItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[10px] border border-border bg-card px-4 py-3">
-      <div className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{label}</div>
-      <div className="text-[14.5px] font-semibold">{value}</div>
     </div>
   );
 }

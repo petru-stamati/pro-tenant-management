@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useDocuments, useUploadDocument, useDeleteDocument, downloadDocument } from "@/hooks/use-documents";
-import { getAccessToken } from "@/lib/api-client";
+import { useDocumentBlobUrl } from "@/hooks/use-document-blob-url";
 import { dateFormatter } from "@/lib/format";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
 export function ApartmentPhotosTab({ apartmentId, canEdit }: { apartmentId: string; canEdit: boolean }) {
   const { data, isLoading } = useDocuments({ apartmentId, category: "PHOTO" });
@@ -94,32 +91,7 @@ function PhotoCard({
   deleting: boolean;
   onDelete: () => void;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${API_URL}/documents/${id}/download`, {
-          credentials: "include",
-          headers: { Authorization: `Bearer ${getAccessToken()}` },
-        });
-        if (!res.ok) throw new Error("download failed");
-        const blob = await res.blob();
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob);
-        setUrl(objectUrl);
-      } catch {
-        if (!cancelled) setFailed(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [id]);
+  const { url, failed } = useDocumentBlobUrl(id);
 
   return (
     <div className="group relative overflow-hidden rounded-[12px] border border-border bg-card shadow-sm">
