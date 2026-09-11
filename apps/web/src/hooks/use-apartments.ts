@@ -19,6 +19,7 @@ export interface ApartmentSummary {
     tenant?: { id: string; firstName: string; lastName: string } | null;
   } | null;
   creditBalanceRON: string;
+  coverDocumentId: string | null;
 }
 
 export function useApartments(params: { ownerId?: string; status?: string; search?: string } = {}) {
@@ -65,6 +66,7 @@ export interface ApartmentInput {
   rooms?: string;
   furnished?: string;
   status?: "VACANT" | "OCCUPIED" | "UNDER_MAINTENANCE";
+  coverDocumentId?: string;
 }
 
 export function useCreateApartment() {

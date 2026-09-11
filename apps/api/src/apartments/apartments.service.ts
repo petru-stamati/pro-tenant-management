@@ -94,6 +94,12 @@ export class ApartmentsService {
 
   async update(id: string, dto: UpdateApartmentDto) {
     await this.assertExists(id);
+    if (dto.coverDocumentId) {
+      const doc = await this.prisma.client.document.findFirst({
+        where: { id: dto.coverDocumentId, apartmentId: id, category: 'PHOTO' },
+      });
+      if (!doc) throw new NotFoundException("Cover photo must be one of this apartment's own PHOTO documents");
+    }
     return this.prisma.client.apartment.update({ where: { id }, data: dto });
   }
 

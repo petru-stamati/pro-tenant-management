@@ -68,7 +68,7 @@ export default function ApartmentsPage() {
               className="overflow-hidden rounded-[14px] border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
             >
               <div className="relative h-[110px] overflow-hidden">
-                <ApartmentThumbnail apartmentId={apt.id} />
+                <ApartmentThumbnail apartmentId={apt.id} coverDocumentId={apt.coverDocumentId} />
                 <span className="absolute top-2.5 right-2.5">
                   <StatusChip tone={apartmentStatusTone(apt.status)}>{apartmentStatusLabel(apt.status)}</StatusChip>
                 </span>

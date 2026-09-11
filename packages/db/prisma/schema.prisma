@@ -298,6 +298,12 @@ model Apartment {
   currentLeaseId String? @unique
   currentLease   Lease?  @relation("ApartmentCurrentLease", fields: [currentLeaseId], references: [id])
 
+  /// PM's chosen cover photo (card grid thumbnail, detail-page hero image) —
+  /// a plain id, not a hard relation, so a later document deletion doesn't
+  /// need cascade handling here; the UI just falls back to the most recent
+  /// photo when this resolves to nothing.
+  coverDocumentId String?
+
   leases               Lease[]               @relation("ApartmentLeases")
   rentPayments         RentPayment[]
   utilityRecords       UtilityRecord[]

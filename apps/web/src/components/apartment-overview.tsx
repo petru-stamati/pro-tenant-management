@@ -25,7 +25,7 @@ export function ApartmentOverview({ apartment }: { apartment: ApartmentDetail })
     [docs],
   );
   const contract = docs?.data.find((d) => d.category === "CONTRACT");
-  const { url: heroUrl } = useDocumentBlobUrl(photos[0]?.id);
+  const { url: heroUrl } = useDocumentBlobUrl(apartment.coverDocumentId ?? photos[0]?.id);
   const tenant = apartment.currentLease?.tenant;
 
   async function handleContract() {

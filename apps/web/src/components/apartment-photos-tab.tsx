@@ -1,29 +1,40 @@
 "use client";
 
+import { useState } from "react";
 import { toast } from "sonner";
 import { useDocuments, useUploadDocument, useDeleteDocument, downloadDocument } from "@/hooks/use-documents";
+import { useApartment, useUpdateApartment } from "@/hooks/use-apartments";
 import { useDocumentBlobUrl } from "@/hooks/use-document-blob-url";
 import { dateFormatter } from "@/lib/format";
 
 export function ApartmentPhotosTab({ apartmentId, canEdit }: { apartmentId: string; canEdit: boolean }) {
   const { data, isLoading } = useDocuments({ apartmentId, category: "PHOTO" });
+  const { data: apartment } = useApartment(apartmentId);
   const upload = useUploadDocument();
+  const updateApartment = useUpdateApartment(apartmentId);
   const deleteDocument = useDeleteDocument();
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const photos = [...(data?.data ?? [])].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
-    try {
-      for (const file of files) {
+    setProgress({ done: 0, total: files.length });
+    let succeeded = 0;
+    let firstError: string | null = null;
+    for (const file of files) {
+      try {
         await upload.mutateAsync({ file, category: "PHOTO", apartmentId });
+        succeeded++;
+      } catch (err) {
+        firstError ??= err instanceof Error ? err.message : "Upload failed";
       }
-      toast.success(files.length > 1 ? "Photos uploaded" : "Photo uploaded");
-    } catch {
-      toast.error("Upload failed");
-    } finally {
-      e.target.value = "";
+      setProgress((p) => (p ? { ...p, done: p.done + 1 } : p));
     }
+    setProgress(null);
+    e.target.value = "";
+    if (succeeded > 0) toast.success(`${succeeded} of ${files.length} photo${files.length > 1 ? "s" : ""} uploaded`);
+    if (firstError) toast.error(succeeded > 0 ? `Some photos failed: ${firstError}` : `Upload failed: ${firstError}`);
   }
 
   async function handleDelete(id: string) {
@@ -33,6 +44,15 @@ export function ApartmentPhotosTab({ apartmentId, canEdit }: { apartmentId: stri
       toast.success("Photo deleted");
     } catch {
       toast.error("Could not delete photo");
+    }
+  }
+
+  async function handleSetCover(id: string) {
+    try {
+      await updateApartment.mutateAsync({ coverDocumentId: id });
+      toast.success("Cover photo updated");
+    } catch {
+      toast.error("Could not set cover photo");
     }
   }
 
@@ -46,9 +66,14 @@ export function ApartmentPhotosTab({ apartmentId, canEdit }: { apartmentId: stri
             accept="image/*"
             multiple
             onChange={handleUpload}
-            disabled={upload.isPending}
+            disabled={!!progress}
             className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1.5 file:text-sm"
           />
+          {progress && (
+            <p className="text-[12.5px] text-muted-foreground">
+              Uploading {progress.done} of {progress.total}…
+            </p>
+          )}
         </div>
       )}
       {isLoading ? (
@@ -66,8 +91,11 @@ export function ApartmentPhotosTab({ apartmentId, canEdit }: { apartmentId: stri
               fileName={p.fileName}
               createdAt={p.createdAt}
               canEdit={canEdit}
+              isCover={apartment?.coverDocumentId === p.id}
               deleting={deleteDocument.isPending}
+              settingCover={updateApartment.isPending}
               onDelete={() => handleDelete(p.id)}
+              onSetCover={() => handleSetCover(p.id)}
             />
           ))}
         </div>
@@ -81,17 +109,23 @@ function PhotoCard({
   fileName,
   createdAt,
   canEdit,
+  isCover,
   deleting,
+  settingCover,
   onDelete,
+  onSetCover,
 }: {
   id: string;
   fileName: string;
   createdAt: string;
   canEdit: boolean;
+  isCover: boolean;
   deleting: boolean;
+  settingCover: boolean;
   onDelete: () => void;
+  onSetCover: () => void;
 }) {
-  const { url, failed } = useDocumentBlobUrl(id);
+  const { url, failed, error } = useDocumentBlobUrl(id);
 
   return (
     <div className="group relative overflow-hidden rounded-[12px] border border-border bg-card shadow-sm">
@@ -100,24 +134,43 @@ function PhotoCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={url} alt={fileName} className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[11px] text-muted-foreground">
-            {failed ? "Preview unavailable" : "Loading…"}
+          <div className="flex h-full w-full flex-col items-center justify-center gap-0.5 px-2 text-center text-[11px] text-muted-foreground">
+            <span>{failed ? "Preview unavailable" : "Loading…"}</span>
+            {failed && error && <span className="text-[9.5px] opacity-70">{error}</span>}
           </div>
         )}
       </button>
+      {isCover && (
+        <span className="absolute top-1.5 left-1.5 rounded-md bg-primary/90 px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+          Cover
+        </span>
+      )}
       <div className="px-2 py-1.5">
         <div className="text-[11px] text-muted-foreground">{dateFormatter.format(new Date(createdAt))}</div>
       </div>
       {canEdit && (
-        <button
-          type="button"
-          disabled={deleting}
-          onClick={onDelete}
-          className="absolute top-1.5 right-1.5 rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] text-destructive opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
-          title="Delete photo"
-        >
-          ×
-        </button>
+        <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {!isCover && (
+            <button
+              type="button"
+              disabled={settingCover}
+              onClick={onSetCover}
+              className="rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] shadow-sm hover:border-primary"
+              title="Set as cover photo"
+            >
+              ★
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onDelete}
+            className="rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] text-destructive shadow-sm"
+            title="Delete photo"
+          >
+            ×
+          </button>
+        </div>
       )}
     </div>
   );
