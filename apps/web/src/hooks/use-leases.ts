@@ -16,7 +16,7 @@ export interface LeaseWithApartment {
   apartmentId: string;
   apartment: { id: string; ownerId: string; name: string; addressLine: string; city: string };
   owner?: { id: string; companyName: string };
-  tenant?: { id: string; firstName: string; lastName: string };
+  tenant?: { id: string; firstName: string; lastName: string; email: string; phone: string | null };
 }
 
 export function useMyLeases() {
@@ -65,6 +65,8 @@ export function useUpdateLease(id: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: {
+      startDate?: string;
+      endDate?: string;
       rentAmountEUR?: number;
       rentVatIncluded?: boolean;
       termMonths?: number;

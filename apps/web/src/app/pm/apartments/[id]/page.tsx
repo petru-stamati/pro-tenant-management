@@ -12,6 +12,7 @@ import { useApartmentNotes, useCreateNote } from "@/hooks/use-notes";
 import { useShowings, useCreateShowing, useDeleteShowing } from "@/hooks/use-showings";
 import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { ApartmentInventory } from "@/components/apartment-inventory";
+import { ApartmentPhotosTab } from "@/components/apartment-photos-tab";
 import { InspectButton } from "@/components/apartment-inspection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -66,6 +67,7 @@ export default function ApartmentDetailPage() {
       <Tabs defaultValue="general">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="photos">Photos</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="utilities">Utilities</TabsTrigger>
@@ -84,6 +86,10 @@ export default function ApartmentDetailPage() {
             <InfoItem label="Furnished" value={apartment.furnished ?? "—"} />
             <InfoItem label="Extras" value={apartment.extras.length ? apartment.extras.join(", ") : "—"} />
           </div>
+        </TabsContent>
+
+        <TabsContent value="photos" className="mt-5">
+          <ApartmentPhotosTab apartmentId={id} canEdit={true} />
         </TabsContent>
 
         <TabsContent value="inventory" className="mt-5">

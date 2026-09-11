@@ -241,6 +241,9 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
   const terminate = useTerminateLease(lease.id);
   const upload = useUploadDocument();
   const [editForm, setEditForm] = useState({
+    startDate: lease.startDate.slice(0, 10),
+    endDate: lease.endDate.slice(0, 10),
+    termMonths: lease.termMonths ?? "",
     rentAmountEUR: lease.rentAmountEUR,
     depositAmountEUR: lease.depositAmountEUR,
     rentVatIncluded: lease.rentVatIncluded,
@@ -249,6 +252,8 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
   const [tenantForm, setTenantForm] = useState({
     firstName: lease.tenant?.firstName ?? "",
     lastName: lease.tenant?.lastName ?? "",
+    email: lease.tenant?.email ?? "",
+    phone: lease.tenant?.phone ?? "",
   });
   const [renewForm, setRenewForm] = useState({ startDate: "", endDate: "", rentAmountEUR: lease.rentAmountEUR });
   const [renewalFile, setRenewalFile] = useState<File | null>(null);
@@ -260,6 +265,9 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
     setError(null);
     try {
       await update.mutateAsync({
+        startDate: editForm.startDate,
+        endDate: editForm.endDate,
+        termMonths: editForm.termMonths === "" ? undefined : Number(editForm.termMonths),
         rentAmountEUR: Number(editForm.rentAmountEUR),
         depositAmountEUR: Number(editForm.depositAmountEUR),
         rentVatIncluded: editForm.rentVatIncluded,
@@ -267,9 +275,17 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
       });
       if (
         lease.tenant &&
-        (tenantForm.firstName !== lease.tenant.firstName || tenantForm.lastName !== lease.tenant.lastName)
+        (tenantForm.firstName !== lease.tenant.firstName ||
+          tenantForm.lastName !== lease.tenant.lastName ||
+          tenantForm.email !== lease.tenant.email ||
+          tenantForm.phone !== (lease.tenant.phone ?? ""))
       ) {
-        await updateTenant.mutateAsync({ firstName: tenantForm.firstName, lastName: tenantForm.lastName });
+        await updateTenant.mutateAsync({
+          firstName: tenantForm.firstName,
+          lastName: tenantForm.lastName,
+          email: tenantForm.email,
+          phone: tenantForm.phone || undefined,
+        });
       }
       toast.success("Lease updated");
       setMode(null);
@@ -321,7 +337,7 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
           <form onSubmit={handleEdit} className="flex flex-col gap-4">
             {lease.tenant && (
               <div className="flex flex-col gap-2 border-b border-border pb-3.5">
-                <Label>Tenant name</Label>
+                <Label>Tenant</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     placeholder="First name"
@@ -334,8 +350,39 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
                     onChange={(e) => setTenantForm((f) => ({ ...f, lastName: e.target.value }))}
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="email"
+                    placeholder="Email"
+                    value={tenantForm.email}
+                    onChange={(e) => setTenantForm((f) => ({ ...f, email: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="Phone — optional"
+                    value={tenantForm.phone}
+                    onChange={(e) => setTenantForm((f) => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
               </div>
             )}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-2">
+                <Label>Start date</Label>
+                <Input
+                  type="date"
+                  value={editForm.startDate}
+                  onChange={(e) => setEditForm((f) => ({ ...f, startDate: e.target.value }))}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>End date</Label>
+                <Input
+                  type="date"
+                  value={editForm.endDate}
+                  onChange={(e) => setEditForm((f) => ({ ...f, endDate: e.target.value }))}
+                />
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
                 <Label>Rent (EUR)</Label>
@@ -355,6 +402,15 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
                   onChange={(e) => setEditForm((f) => ({ ...f, depositAmountEUR: e.target.value }))}
                 />
               </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Term (months) — optional</Label>
+              <Input
+                type="number"
+                min="1"
+                value={editForm.termMonths}
+                onChange={(e) => setEditForm((f) => ({ ...f, termMonths: e.target.value }))}
+              />
             </div>
             <label className="flex items-center gap-1.5 text-[13px]">
               <input

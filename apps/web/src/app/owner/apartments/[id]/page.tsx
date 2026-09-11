@@ -5,9 +5,10 @@ import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { useApartment, useTenantHistory } from "@/hooks/use-apartments";
 import { useLeases } from "@/hooks/use-leases";
-import { useDocuments, downloadDocument, type DocumentItem } from "@/hooks/use-documents";
+import { useDocuments, downloadDocument } from "@/hooks/use-documents";
 import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { ApartmentInventory } from "@/components/apartment-inventory";
+import { ApartmentPhotosTab } from "@/components/apartment-photos-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,7 @@ export default function OwnerApartmentDetailPage() {
         </TabsContent>
 
         <TabsContent value="photos" className="mt-5">
-          <PhotosTab apartmentId={id} />
+          <ApartmentPhotosTab apartmentId={id} canEdit={false} />
         </TabsContent>
 
         <TabsContent value="lease" className="mt-5">
@@ -89,56 +90,6 @@ function InfoItem({ label, value }: { label: string; value: string }) {
 
 function Panel({ children }: { children: React.ReactNode }) {
   return <div className="rounded-[14px] border border-border bg-card p-5 shadow-sm">{children}</div>;
-}
-
-function PhotosTab({ apartmentId }: { apartmentId: string }) {
-  const { data, isLoading } = useDocuments({ apartmentId });
-  const photos = data?.data.filter((d) => d.category === "PHOTO") ?? [];
-
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (photos.length === 0) {
-    return (
-      <Panel>
-        <p className="text-sm text-muted-foreground">No photos uploaded yet.</p>
-      </Panel>
-    );
-  }
-
-  const sorted = [...photos].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {sorted.map((p) => (
-        <PhotoCard key={p.id} doc={p} />
-      ))}
-    </div>
-  );
-}
-
-function PhotoCard({ doc }: { doc: DocumentItem }) {
-  const [downloading, setDownloading] = useState(false);
-
-  async function handleDownload() {
-    setDownloading(true);
-    try {
-      await downloadDocument(doc.id, doc.fileName);
-    } catch {
-      toast.error("Download failed");
-    } finally {
-      setDownloading(false);
-    }
-  }
-
-  return (
-    <button
-      onClick={handleDownload}
-      disabled={downloading}
-      className="rounded-[12px] border border-border bg-card p-3 text-center shadow-sm transition-shadow hover:shadow-md disabled:opacity-60"
-    >
-      <div className="mb-1 truncate text-[12px] font-medium">{doc.fileName}</div>
-      <div className="text-[11px] text-muted-foreground">{dateFormatter.format(new Date(doc.createdAt))}</div>
-    </button>
-  );
 }
 
 function CurrentLeaseTab({ apartmentId, currentLeaseId }: { apartmentId: string; currentLeaseId: string | null }) {
