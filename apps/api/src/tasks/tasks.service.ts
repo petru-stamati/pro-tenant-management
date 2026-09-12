@@ -13,6 +13,9 @@ import { CompleteLeaseSigningDto } from './dto/complete-lease-signing.dto';
 
 const otherRole = (role: SystemRoleKey | null): SystemRoleKey => (role === 'ADMIN' ? 'OWNER' : 'ADMIN');
 
+/** Never include a bare `true` on a User relation — that serializes passwordHash straight into the API response. */
+const SAFE_USER_SELECT = { id: true, firstName: true, lastName: true, roleId: true } as const;
+
 @Injectable()
 export class TasksService {
   constructor(
@@ -33,7 +36,17 @@ export class TasksService {
     const [data, total] = await Promise.all([
       scoped.task.findMany({
         where,
-        include: { apartment: true, tenant: true, createdBy: true },
+        include: {
+          apartment: true,
+          tenant: true,
+          createdBy: { select: SAFE_USER_SELECT },
+          // Apartment-scoped queries feed the apartment's Activity timeline,
+          // which needs the comment trail without an extra per-task fetch —
+          // cheap here since it's always filtered to one apartment.
+          ...(apartmentId
+            ? { comments: { orderBy: { createdAt: 'asc' as const }, include: { author: { select: SAFE_USER_SELECT } } } }
+            : {}),
+        },
         // Urgent-first, then newest — this is the "what do I need to do" inbox, not a chronological log.
         orderBy: [{ urgent: 'desc' }, { createdAt: 'desc' }],
         ...skipTake(page, pageSize),
@@ -47,9 +60,9 @@ export class TasksService {
     const task = await this.scopedFind(user, id, {
       apartment: true,
       tenant: true,
-      createdBy: true,
+      createdBy: { select: SAFE_USER_SELECT },
       lease: true,
-      comments: { orderBy: { createdAt: 'asc' }, include: { author: true } },
+      comments: { orderBy: { createdAt: 'asc' }, include: { author: { select: SAFE_USER_SELECT } } },
     });
     if (!task) throw new NotFoundException('Task not found');
     return task;

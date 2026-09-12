@@ -27,7 +27,11 @@ export class InspectionsService {
     const scoped = this.prisma.forOwnerScope(allowedOwnerIds);
     return scoped.inspection.findMany({
       where: { apartmentId },
-      include: { results: { orderBy: { createdAt: 'asc' } }, performedBy: true },
+      // `select`, not a bare `true` — a full User include would serialize passwordHash into the response.
+      include: {
+        results: { orderBy: { createdAt: 'asc' } },
+        performedBy: { select: { id: true, firstName: true, lastName: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
