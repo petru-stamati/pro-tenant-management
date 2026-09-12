@@ -66,7 +66,7 @@ export class MaintenanceController {
     @Body() dto: ProposalDecisionDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.maintenance.decideProposal(id, proposalId, dto.decision, user);
+    return this.maintenance.decideProposal(id, proposalId, dto.decision, user, dto.comment);
   }
 
   @Get(':id/comments')

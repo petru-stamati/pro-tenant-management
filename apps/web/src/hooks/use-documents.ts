@@ -52,6 +52,7 @@ export interface UploadDocumentInput {
   category: string;
   apartmentId?: string;
   leaseId?: string;
+  maintenanceRequestId?: string;
   utilityRecordId?: string;
   apartmentInvoiceId?: string;
   paymentConfirmationId?: string;
@@ -68,6 +69,7 @@ export function useUploadDocument() {
       category,
       apartmentId,
       leaseId,
+      maintenanceRequestId,
       utilityRecordId,
       apartmentInvoiceId,
       paymentConfirmationId,
@@ -85,6 +87,7 @@ export function useUploadDocument() {
             category,
             apartmentId,
             leaseId,
+            maintenanceRequestId,
             utilityRecordId,
             apartmentInvoiceId,
             paymentConfirmationId,

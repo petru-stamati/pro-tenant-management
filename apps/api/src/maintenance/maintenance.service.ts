@@ -70,7 +70,7 @@ export class MaintenanceService {
     const [data, total] = await Promise.all([
       scoped.maintenanceRequest.findMany({
         where,
-        include: { apartment: true, proposals: true },
+        include: { apartment: true, proposals: { include: { lineItems: true } } },
         orderBy: { createdAt: 'desc' },
         ...skipTake(page, pageSize),
       }),
@@ -91,7 +91,12 @@ export class MaintenanceService {
     const allowedOwnerIds = await this.permissions.resolveAllowedOwnerIds(user);
     const request = await this.prisma.forOwnerScope(allowedOwnerIds).maintenanceRequest.findFirst({
       where: { id },
-      include: { apartment: true, proposals: true, statusEvents: { orderBy: { createdAt: 'asc' } } },
+      include: {
+        apartment: true,
+        proposals: { include: { lineItems: true }, orderBy: { version: 'asc' } },
+        statusEvents: { orderBy: { createdAt: 'asc' } },
+        documents: true,
+      },
     });
     if (!request) throw new NotFoundException('Maintenance request not found');
     return request;
@@ -108,6 +113,14 @@ export class MaintenanceService {
       if (!hasLease) throw new ForbiddenException('You can only report issues for your own apartment');
     }
 
+    // PM already knows what's needed and is quoting it upfront (e.g. after a
+    // move-out inspection) — skip REPORTED/TRIAGED entirely and land
+    // straight in PENDING_OWNER_APPROVAL with these lines as proposal v1,
+    // instead of the generic "someone reported an issue, PM triages later" path.
+    const isQuotedUpfront = !!dto.lineItems?.length;
+    const initialStatus = isQuotedUpfront ? 'PENDING_OWNER_APPROVAL' : 'REPORTED';
+    const totalEUR = isQuotedUpfront ? round2(dto.lineItems!.reduce((sum, l) => sum + l.priceEUR, 0)) : 0;
+
     const request = await this.prisma.client.$transaction(async (tx) => {
       const request = await tx.maintenanceRequest.create({
         data: {
@@ -118,10 +131,11 @@ export class MaintenanceService {
           description: dto.description,
           urgent: dto.urgent ?? false,
           reportedById: reportedBy.id,
+          status: initialStatus,
         },
       });
       await tx.maintenanceStatusEvent.create({
-        data: { maintenanceRequestId: request.id, toStatus: 'REPORTED', changedById: reportedBy.id },
+        data: { maintenanceRequestId: request.id, toStatus: initialStatus, changedById: reportedBy.id },
       });
       if (dto.roomItemId) {
         await tx.roomItem.update({
@@ -129,17 +143,42 @@ export class MaintenanceService {
           data: { condition: 'NEEDS_ATTENTION', conditionNote: dto.title },
         });
       }
+      if (isQuotedUpfront) {
+        await tx.maintenanceProposal.create({
+          data: {
+            maintenanceRequestId: request.id,
+            version: 1,
+            costEUR: totalEUR,
+            description: dto.description,
+            createdById: reportedBy.id,
+            lineItems: { create: dto.lineItems!.map((l) => ({ description: l.description, priceEUR: l.priceEUR })) },
+          },
+        });
+      }
       return request;
     });
-    await this.notifications.notifyRole(
-      apartment.ownerId,
-      'ADMIN',
-      'MAINTENANCE_STATUS_CHANGED',
-      `New issue reported — ${apartment.name}`,
-      dto.title,
-      'MaintenanceRequest',
-      request.id,
-    );
+
+    if (isQuotedUpfront) {
+      await this.notifications.notifyRole(
+        apartment.ownerId,
+        'OWNER',
+        'PROPOSAL_PENDING_APPROVAL',
+        `Repair quote — ${apartment.name}`,
+        `${dto.title} — needs your approval (${totalEUR} EUR).`,
+        'MaintenanceRequest',
+        request.id,
+      );
+    } else {
+      await this.notifications.notifyRole(
+        apartment.ownerId,
+        'ADMIN',
+        'MAINTENANCE_STATUS_CHANGED',
+        `New issue reported — ${apartment.name}`,
+        dto.title,
+        'MaintenanceRequest',
+        request.id,
+      );
+    }
     return request;
   }
 
@@ -182,7 +221,7 @@ export class MaintenanceService {
         'OWNER',
         'MAINTENANCE_COMPLETED',
         updated.title,
-        'This repair has been completed.',
+        'This repair has been completed — the apartment is ready.',
         'MaintenanceRequest',
         id,
       );
@@ -214,6 +253,13 @@ export class MaintenanceService {
       throw new BadRequestException('A request must be TRIAGED before a proposal can be attached');
     }
 
+    const hasLineItems = !!dto.lineItems?.length;
+    const hasContractorQuote = dto.contractorName !== undefined && dto.costEUR !== undefined;
+    if (hasLineItems === hasContractorQuote) {
+      throw new BadRequestException('Provide either contractorName+costEUR or lineItems, not both');
+    }
+    const costEUR = hasLineItems ? round2(dto.lineItems!.reduce((sum, l) => sum + l.priceEUR, 0)) : dto.costEUR!;
+
     const proposal = await this.prisma.client.$transaction(async (tx) => {
       // A revised quote supersedes whatever was still awaiting a decision —
       // "every proposal version" stays on record, nothing is overwritten (PRD §4.9).
@@ -228,9 +274,12 @@ export class MaintenanceService {
           maintenanceRequestId: requestId,
           version,
           contractorName: dto.contractorName,
-          costEUR: dto.costEUR,
+          costEUR,
           description: dto.description,
           createdById: createdBy.id,
+          ...(hasLineItems
+            ? { lineItems: { create: dto.lineItems!.map((l) => ({ description: l.description, priceEUR: l.priceEUR })) } }
+            : {}),
         },
       });
 
@@ -240,7 +289,7 @@ export class MaintenanceService {
           maintenanceRequestId: requestId,
           fromStatus: request.status,
           toStatus: 'PENDING_OWNER_APPROVAL',
-          note: `Proposal v${version} from ${dto.contractorName}`,
+          note: dto.contractorName ? `Proposal v${version} from ${dto.contractorName}` : `Revised quote v${version}`,
           changedById: createdBy.id,
         },
       });
@@ -251,7 +300,7 @@ export class MaintenanceService {
       'OWNER',
       'PROPOSAL_PENDING_APPROVAL',
       request.title,
-      `Quote from ${dto.contractorName} needs your approval.`,
+      dto.contractorName ? `Quote from ${dto.contractorName} needs your approval.` : `Revised quote needs your approval (${costEUR} EUR).`,
       'MaintenanceRequest',
       requestId,
     );
@@ -263,6 +312,7 @@ export class MaintenanceService {
     proposalId: string,
     decision: 'APPROVED' | 'REJECTED',
     decidedBy: AuthenticatedUser,
+    comment?: string,
   ) {
     const allowedOwnerIds = await this.permissions.resolveAllowedOwnerIds(decidedBy);
     const request = await this.prisma.forOwnerScope(allowedOwnerIds).maintenanceRequest.findFirst({
@@ -300,6 +350,11 @@ export class MaintenanceService {
           changedById: decidedBy.id,
         },
       });
+      if (comment?.trim()) {
+        await tx.maintenanceComment.create({
+          data: { maintenanceRequestId: requestId, proposalId, body: comment.trim(), authorId: decidedBy.id },
+        });
+      }
       return updated;
     });
     await this.notifications.notifyRole(
@@ -307,7 +362,7 @@ export class MaintenanceService {
       'ADMIN',
       'PROPOSAL_DECIDED',
       updated.title,
-      `The Owner ${decision.toLowerCase()} the quote.`,
+      comment?.trim() ? `The Owner ${decision.toLowerCase()} the quote: "${comment.trim()}"` : `The Owner ${decision.toLowerCase()} the quote.`,
       'MaintenanceRequest',
       requestId,
     );
@@ -341,4 +396,8 @@ export class MaintenanceService {
     if (!request) throw new NotFoundException('Maintenance request not found');
     return request;
   }
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

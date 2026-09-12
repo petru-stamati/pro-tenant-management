@@ -9,8 +9,9 @@ import {
   useDecideProposal,
   useCreateComment,
 } from "@/hooks/use-maintenance";
+import { downloadDocument } from "@/hooks/use-documents";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { StatusChip } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
 import { formatEUR, dateFormatter } from "@/lib/format";
@@ -68,15 +69,46 @@ export default function OwnerMaintenanceDetailPage() {
 
       {pendingProposal && (
         <div className="mb-5 rounded-[14px] border border-border bg-card p-5 shadow-sm">
-          <h3 className="mb-3 text-[14.5px] font-semibold">Repair proposal — awaiting your decision</h3>
+          <h3 className="mb-3 text-[14.5px] font-semibold">Repair quote — awaiting your decision</h3>
           <div className="mb-3">
-            <div className="font-medium">{pendingProposal.contractorName}</div>
+            {pendingProposal.contractorName && <div className="font-medium">{pendingProposal.contractorName}</div>}
             <p className="mt-0.5 text-[13px] text-muted-foreground">{pendingProposal.description}</p>
-            <div className="mt-2 font-mono-tabular font-mono text-lg font-semibold">
-              {formatEUR(pendingProposal.costEUR)}
+            {pendingProposal.lineItems && pendingProposal.lineItems.length > 0 && (
+              <div className="mt-3 flex flex-col gap-1 border-t border-border pt-3">
+                {pendingProposal.lineItems.map((li) => (
+                  <div key={li.id} className="flex items-center justify-between text-[13px]">
+                    <span className="text-muted-foreground">{li.description}</span>
+                    <span className="font-mono-tabular font-mono">{formatEUR(li.priceEUR)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
+              <span className="text-[13px] text-muted-foreground">Total</span>
+              <div className="font-mono-tabular font-mono text-lg font-semibold">
+                {formatEUR(pendingProposal.costEUR)}
+              </div>
             </div>
           </div>
           <ProposalDecision requestId={id} proposalId={pendingProposal.id} />
+        </div>
+      )}
+
+      {request.documents && request.documents.length > 0 && (
+        <div className="mb-5 rounded-[14px] border border-border bg-card p-5 shadow-sm">
+          <h3 className="mb-3 text-[14.5px] font-semibold">Photos</h3>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {request.documents.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => downloadDocument(d.id, d.fileName)}
+                className="truncate rounded-md border border-border px-2 py-1.5 text-left text-[12px] hover:border-primary"
+              >
+                {d.fileName}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -88,9 +120,7 @@ export default function OwnerMaintenanceDetailPage() {
               <div key={p.id} className="rounded-[12px] border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="font-medium">
-                      v{p.version} — {p.contractorName}
-                    </div>
+                    <div className="font-medium">v{p.version}{p.contractorName ? ` — ${p.contractorName}` : ""}</div>
                     <p className="mt-0.5 text-[12.5px] text-muted-foreground">{p.description}</p>
                   </div>
                   <div className="text-right">
@@ -100,6 +130,16 @@ export default function OwnerMaintenanceDetailPage() {
                     </StatusChip>
                   </div>
                 </div>
+                {p.lineItems && p.lineItems.length > 0 && (
+                  <div className="mt-2.5 flex flex-col gap-1 border-t border-border pt-2.5">
+                    {p.lineItems.map((li) => (
+                      <div key={li.id} className="flex items-center justify-between text-[12.5px]">
+                        <span className="text-muted-foreground">{li.description}</span>
+                        <span className="font-mono-tabular font-mono">{formatEUR(li.priceEUR)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -117,14 +157,14 @@ export default function OwnerMaintenanceDetailPage() {
           ))}
           {comments?.length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}
         </div>
-        <form onSubmit={submitComment} className="flex gap-2">
-          <Input
+        <form onSubmit={submitComment} className="flex flex-col gap-2">
+          <Textarea
             value={commentBody}
             onChange={(e) => setCommentBody(e.target.value)}
             placeholder="Add a comment…"
-            className="flex-1"
+            rows={3}
           />
-          <Button type="submit" disabled={createComment.isPending || !commentBody.trim()}>
+          <Button type="submit" disabled={createComment.isPending || !commentBody.trim()} className="self-end">
             Send
           </Button>
         </form>
@@ -135,24 +175,34 @@ export default function OwnerMaintenanceDetailPage() {
 
 function ProposalDecision({ requestId, proposalId }: { requestId: string; proposalId: string }) {
   const decide = useDecideProposal(requestId, proposalId);
+  const [comment, setComment] = useState("");
 
   async function handleDecision(decision: "APPROVED" | "REJECTED") {
     try {
-      await decide.mutateAsync(decision);
+      await decide.mutateAsync({ decision, comment: comment.trim() || undefined });
       toast.success(decision === "APPROVED" ? "Proposal approved" : "Proposal rejected");
+      setComment("");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Something went wrong.");
     }
   }
 
   return (
-    <div className="flex gap-2">
-      <Button onClick={() => handleDecision("APPROVED")} disabled={decide.isPending}>
-        Approve
-      </Button>
-      <Button variant="destructive" onClick={() => handleDecision("REJECTED")} disabled={decide.isPending}>
-        Reject
-      </Button>
+    <div className="flex flex-col gap-2">
+      <Textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Add a comment (optional)…"
+        rows={2}
+      />
+      <div className="flex gap-2">
+        <Button onClick={() => handleDecision("APPROVED")} disabled={decide.isPending}>
+          Approve
+        </Button>
+        <Button variant="destructive" onClick={() => handleDecision("REJECTED")} disabled={decide.isPending}>
+          Reject
+        </Button>
+      </div>
     </div>
   );
 }

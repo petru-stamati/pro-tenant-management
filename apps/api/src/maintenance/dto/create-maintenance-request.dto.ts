@@ -1,4 +1,6 @@
-import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMinSize, IsArray, IsBoolean, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { LineItemDto } from './line-item.dto';
 
 export class CreateMaintenanceRequestDto {
   @IsString()
@@ -20,4 +22,17 @@ export class CreateMaintenanceRequestDto {
   @IsOptional()
   @IsString()
   roomItemId?: string;
+
+  /**
+   * Set when the PM already knows what's needed and is quoting it upfront
+   * (repairs/cleaning after a move-out, etc.) — when present, the request
+   * skips REPORTED/TRIAGED and goes straight to PENDING_OWNER_APPROVAL with
+   * these as its first proposal (see MaintenanceService.create).
+   */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => LineItemDto)
+  lineItems?: LineItemDto[];
 }

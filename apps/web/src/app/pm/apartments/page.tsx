@@ -67,31 +67,23 @@ export default function ApartmentsPage() {
               href={`/pm/apartments/${apt.id}`}
               className="overflow-hidden rounded-[14px] border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
             >
-              <div className="relative h-[110px] overflow-hidden">
+              <div className="relative h-[210px] overflow-hidden">
                 <ApartmentThumbnail apartmentId={apt.id} coverDocumentId={apt.coverDocumentId} />
                 <span className="absolute top-2.5 right-2.5">
                   <StatusChip tone={apartmentStatusTone(apt.status)}>{apartmentStatusLabel(apt.status)}</StatusChip>
                 </span>
               </div>
-              <div className="p-4">
-                <h4 className="mb-0.5 text-[15px] font-semibold">{apt.name}</h4>
-                <div className="mb-3 text-xs text-muted-foreground">
+              <div className="px-3 py-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h4 className="truncate text-[13.5px] font-semibold">{apt.name}</h4>
+                  <span className="shrink-0 font-mono-tabular font-mono text-[12.5px] font-semibold">
+                    {apt.currentLease ? formatEUR(apt.currentLease.rentAmountEUR) : "—"}
+                  </span>
+                </div>
+                <div className="truncate text-[11px] text-muted-foreground">
                   {apt.city}
                   {apt.sector ? `, ${apt.sector}` : ""} · {ownerNameById.get(apt.ownerId) ?? "—"}
                 </div>
-                <Row k="Rent" v={apt.currentLease ? formatEUR(apt.currentLease.rentAmountEUR) : "—"} />
-                <Row
-                  k={apt.status === "OCCUPIED" ? "Lease ends" : "Status"}
-                  v={
-                    apt.currentLease
-                      ? new Date(apt.currentLease.endDate).toLocaleDateString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : apartmentStatusLabel(apt.status)
-                  }
-                />
               </div>
             </Link>
           ))}
@@ -127,11 +119,3 @@ function FilterButton({
   );
 }
 
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between border-t border-border py-1.5 text-[12.5px] first:border-t-0">
-      <span className="text-muted-foreground">{k}</span>
-      <span className="font-mono-tabular font-mono font-semibold">{v}</span>
-    </div>
-  );
-}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useMaintenanceRequest,
@@ -11,12 +12,14 @@ import {
   useCreateProposal,
   useCreateComment,
 } from "@/hooks/use-maintenance";
+import { useUploadDocument, useDeleteDocument, downloadDocument } from "@/hooks/use-documents";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { StatusChip } from "@/components/status-chip";
+import { LineItemsEditor, draftsToLineItems, type LineItemDraft } from "@/components/line-items-editor";
 import { ApiError } from "@/lib/api-client";
 import { formatEUR, dateFormatter } from "@/lib/format";
 
@@ -40,8 +43,12 @@ export default function MaintenanceDetailPage() {
   const createComment = useCreateComment(id);
   const [proposalOpen, setProposalOpen] = useState(false);
   const [proposalForm, setProposalForm] = useState({ contractorName: "", costEUR: "", description: "" });
+  const [proposalLineItems, setProposalLineItems] = useState<LineItemDraft[]>([]);
   const [commentBody, setCommentBody] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const upload = useUploadDocument();
+  const deleteDocument = useDeleteDocument();
+  const queryClient = useQueryClient();
 
   if (isLoading || !request) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
@@ -75,15 +82,17 @@ export default function MaintenanceDetailPage() {
   async function submitProposal(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const resolvedLineItems = draftsToLineItems(proposalLineItems);
     try {
-      await createProposal.mutateAsync({
-        contractorName: proposalForm.contractorName,
-        costEUR: Number(proposalForm.costEUR),
-        description: proposalForm.description,
-      });
+      await createProposal.mutateAsync(
+        resolvedLineItems.length
+          ? { description: proposalForm.description, lineItems: resolvedLineItems }
+          : { contractorName: proposalForm.contractorName, costEUR: Number(proposalForm.costEUR), description: proposalForm.description },
+      );
       toast.success("Proposal sent for owner approval");
       setProposalOpen(false);
       setProposalForm({ contractorName: "", costEUR: "", description: "" });
+      setProposalLineItems([]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     }
@@ -94,6 +103,30 @@ export default function MaintenanceDetailPage() {
     if (!commentBody.trim()) return;
     await createComment.mutateAsync({ body: commentBody });
     setCommentBody("");
+  }
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await upload.mutateAsync({ file, category: "MAINTENANCE", maintenanceRequestId: id });
+      queryClient.invalidateQueries({ queryKey: ["maintenance-requests", "detail", id] });
+      toast.success("Photo attached");
+    } catch {
+      toast.error("Upload failed");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  async function handlePhotoDelete(docId: string) {
+    if (!window.confirm("Delete this photo?")) return;
+    try {
+      await deleteDocument.mutateAsync(docId);
+      queryClient.invalidateQueries({ queryKey: ["maintenance-requests", "detail", id] });
+    } catch {
+      toast.error("Could not delete photo");
+    }
   }
 
   return (
@@ -132,23 +165,6 @@ export default function MaintenanceDetailPage() {
                 </DialogHeader>
                 <form onSubmit={submitProposal} className="flex flex-col gap-4">
                   <div className="flex flex-col gap-2">
-                    <Label>Contractor</Label>
-                    <Input
-                      required
-                      value={proposalForm.contractorName}
-                      onChange={(e) => setProposalForm((f) => ({ ...f, contractorName: e.target.value }))}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label>Cost (EUR)</Label>
-                    <Input
-                      type="number"
-                      required
-                      value={proposalForm.costEUR}
-                      onChange={(e) => setProposalForm((f) => ({ ...f, costEUR: e.target.value }))}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2">
                     <Label>Description</Label>
                     <Textarea
                       required
@@ -157,9 +173,39 @@ export default function MaintenanceDetailPage() {
                       onChange={(e) => setProposalForm((f) => ({ ...f, description: e.target.value }))}
                     />
                   </div>
+                  <LineItemsEditor
+                    items={proposalLineItems}
+                    onChange={setProposalLineItems}
+                    label="Itemized quote — optional"
+                  />
+                  {proposalLineItems.length === 0 && (
+                    <>
+                      <div className="flex flex-col gap-2">
+                        <Label>Or: single contractor — Contractor</Label>
+                        <Input
+                          value={proposalForm.contractorName}
+                          onChange={(e) => setProposalForm((f) => ({ ...f, contractorName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label>Cost (EUR)</Label>
+                        <Input
+                          type="number"
+                          value={proposalForm.costEUR}
+                          onChange={(e) => setProposalForm((f) => ({ ...f, costEUR: e.target.value }))}
+                        />
+                      </div>
+                    </>
+                  )}
                   {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
                   <DialogFooter>
-                    <Button type="submit" disabled={createProposal.isPending}>
+                    <Button
+                      type="submit"
+                      disabled={
+                        createProposal.isPending ||
+                        (proposalLineItems.length === 0 && (!proposalForm.contractorName || !proposalForm.costEUR))
+                      }
+                    >
                       {createProposal.isPending ? "Sending…" : "Send to owner"}
                     </Button>
                   </DialogFooter>
@@ -189,9 +235,7 @@ export default function MaintenanceDetailPage() {
               <div key={p.id} className="rounded-[12px] border border-border bg-card p-4 shadow-sm">
                 <div className="flex items-start justify-between">
                   <div>
-                    <div className="font-medium">
-                      v{p.version} — {p.contractorName}
-                    </div>
+                    <div className="font-medium">v{p.version}{p.contractorName ? ` — ${p.contractorName}` : ""}</div>
                     <p className="mt-0.5 text-[12.5px] text-muted-foreground">{p.description}</p>
                   </div>
                   <div className="text-right">
@@ -201,11 +245,54 @@ export default function MaintenanceDetailPage() {
                     </StatusChip>
                   </div>
                 </div>
+                {p.lineItems && p.lineItems.length > 0 && (
+                  <div className="mt-2.5 flex flex-col gap-1 border-t border-border pt-2.5">
+                    {p.lineItems.map((li) => (
+                      <div key={li.id} className="flex items-center justify-between text-[12.5px]">
+                        <span className="text-muted-foreground">{li.description}</span>
+                        <span className="font-mono-tabular font-mono">{formatEUR(li.priceEUR)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
+
+      <div className="mb-5">
+        <h3 className="mb-3 text-[14.5px] font-semibold">Photos</h3>
+        <div className="mb-3 flex flex-col gap-2">
+          <Label>Attach a photo — before/after, condition, whatever's useful</Label>
+          <Input type="file" accept="image/*" onChange={handlePhotoUpload} disabled={upload.isPending} />
+        </div>
+        {request.documents && request.documents.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {request.documents.map((d) => (
+              <div key={d.id} className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => downloadDocument(d.id, d.fileName)}
+                  className="flex-1 truncate rounded-md border border-border px-2 py-1.5 text-left text-[12px] hover:border-primary"
+                >
+                  {d.fileName}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handlePhotoDelete(d.id)}
+                  className="rounded-md border border-border px-1.5 py-1 text-[11px] text-destructive"
+                  title="Delete"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[13px] text-muted-foreground">No photos yet.</p>
+        )}
+      </div>
 
       <div>
         <h3 className="mb-3 text-[14.5px] font-semibold">Comments</h3>
@@ -221,14 +308,14 @@ export default function MaintenanceDetailPage() {
           ))}
           {comments?.length === 0 && <p className="text-sm text-muted-foreground">No comments yet.</p>}
         </div>
-        <form onSubmit={submitComment} className="flex gap-2">
-          <Input
+        <form onSubmit={submitComment} className="flex flex-col gap-2">
+          <Textarea
             value={commentBody}
             onChange={(e) => setCommentBody(e.target.value)}
-            placeholder="Add a comment…"
-            className="flex-1"
+            placeholder="e.g. Cleaning scheduled for the 14th, paint job still remaining…"
+            rows={3}
           />
-          <Button type="submit" disabled={createComment.isPending || !commentBody.trim()}>
+          <Button type="submit" className="self-end" disabled={createComment.isPending || !commentBody.trim()}>
             Send
           </Button>
         </form>
@@ -263,7 +350,7 @@ function CancelButton({ id }: { id: string }) {
         <form onSubmit={handleCancel} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label>Reason</Label>
-            <Input required value={reason} onChange={(e) => setReason(e.target.value)} />
+            <Textarea required rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
           </div>
           <DialogFooter>
             <Button type="submit" variant="destructive" disabled={cancel.isPending}>

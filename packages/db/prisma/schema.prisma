@@ -1117,8 +1117,10 @@ model MaintenanceProposal {
 
   maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id])
 
-  version        Int
-  contractorName String
+  version Int
+  /// Null when this proposal came from itemized line items instead of a
+  /// single named contractor (PM-quoted-upfront flow — see MaintenanceService.create).
+  contractorName String?
   costEUR        Decimal        @db.Decimal(10, 2)
   description    String
   status         ProposalStatus @default(PENDING)
@@ -1129,7 +1131,8 @@ model MaintenanceProposal {
   decidedBy   User?     @relation("ProposalDecidedBy", fields: [decidedById], references: [id])
   decidedAt   DateTime?
 
-  comments MaintenanceComment[]
+  comments  MaintenanceComment[]
+  lineItems MaintenanceLineItem[]
 
   deletedAt DateTime?
   createdAt DateTime  @default(now())
@@ -1137,6 +1140,24 @@ model MaintenanceProposal {
 
   @@index([maintenanceRequestId])
   @@index([status])
+}
+
+/// One priced repair/cleaning/service line within a proposal — "1 repaint
+/// living room: 300 EUR" — costEUR on the parent proposal is the sum of
+/// these when a proposal was created from itemized lines rather than a
+/// single contractor quote.
+model MaintenanceLineItem {
+  id         String @id @default(cuid())
+  proposalId String
+
+  proposal MaintenanceProposal @relation(fields: [proposalId], references: [id])
+
+  description String
+  priceEUR    Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  @@index([proposalId])
 }
 
 /// Comment thread on a request/proposal. `visibleToTenant` implements PRD

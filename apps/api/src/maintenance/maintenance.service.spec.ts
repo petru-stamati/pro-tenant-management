@@ -348,3 +348,113 @@ describe('MaintenanceService state machine', () => {
     });
   });
 });
+
+describe('MaintenanceService.create — quoted upfront with line items', () => {
+  it('skips straight to PENDING_OWNER_APPROVAL and creates proposal v1 from the line items', async () => {
+    const prisma = makePrisma();
+    const notifications = makeNotifications();
+    const service = new MaintenanceService(prisma as never, makePermissions() as never, notifications as never);
+
+    await service.create(
+      {
+        apartmentId: 'apt-1',
+        title: 'Repairs + cleaning',
+        description: 'Move-out turnaround',
+        lineItems: [
+          { description: 'Repaint living room', priceEUR: 300 },
+          { description: 'Deep clean', priceEUR: 150 },
+        ],
+      } as never,
+      makeUser({}),
+    );
+
+    expect(prisma.tx.maintenanceRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING_OWNER_APPROVAL' }) }),
+    );
+    expect(prisma.tx.maintenanceProposal.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          version: 1,
+          costEUR: 450,
+          lineItems: { create: [
+            { description: 'Repaint living room', priceEUR: 300 },
+            { description: 'Deep clean', priceEUR: 150 },
+          ] },
+        }),
+      }),
+    );
+    expect(notifications.notifyRole).toHaveBeenCalledWith(
+      'owner-1',
+      'OWNER',
+      'PROPOSAL_PENDING_APPROVAL',
+      expect.any(String),
+      expect.stringContaining('450'),
+      'MaintenanceRequest',
+      'req-new',
+    );
+  });
+
+  it('still starts at REPORTED and notifies ADMIN when no line items are given', async () => {
+    const prisma = makePrisma();
+    const notifications = makeNotifications();
+    const service = new MaintenanceService(prisma as never, makePermissions() as never, notifications as never);
+
+    await service.create({ apartmentId: 'apt-1', title: 'Leaky faucet', description: 'y' } as never, makeUser({}));
+
+    expect(prisma.tx.maintenanceRequest.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'REPORTED' }) }),
+    );
+    expect(prisma.tx.maintenanceProposal.create).not.toHaveBeenCalled();
+    expect(notifications.notifyRole).toHaveBeenCalledWith(
+      'owner-1',
+      'ADMIN',
+      'MAINTENANCE_STATUS_CHANGED',
+      expect.any(String),
+      'Leaky faucet',
+      'MaintenanceRequest',
+      'req-new',
+    );
+  });
+});
+
+describe('MaintenanceService.createProposal — line item mode', () => {
+  it('rejects when both contractorName+costEUR and lineItems are given', async () => {
+    const prisma = makePrisma();
+    prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'TRIAGED', ownerId: 'owner-1' });
+    const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.createProposal(
+        'req-1',
+        { contractorName: 'X', costEUR: 100, description: 'y', lineItems: [{ description: 'a', priceEUR: 10 }] } as never,
+        makeUser({}),
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects when neither contractorName+costEUR nor lineItems are given', async () => {
+    const prisma = makePrisma();
+    prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'TRIAGED', ownerId: 'owner-1' });
+    const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await expect(
+      service.createProposal('req-1', { description: 'y' } as never, makeUser({})),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('sums line items into costEUR and stores them on the proposal', async () => {
+    const prisma = makePrisma();
+    prisma.client.maintenanceRequest.findFirst.mockResolvedValue({ id: 'req-1', status: 'TRIAGED', ownerId: 'owner-1' });
+    const service = new MaintenanceService(prisma as never, makePermissions() as never, makeNotifications() as never);
+
+    await service.createProposal(
+      'req-1',
+      { description: 'Revised quote', lineItems: [{ description: 'Repaint', priceEUR: 200 }, { description: 'Clean', priceEUR: 100 }] } as never,
+      makeUser({}),
+    );
+
+    expect(prisma.tx.maintenanceProposal.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ costEUR: 300 }) }),
+    );
+  });
+});

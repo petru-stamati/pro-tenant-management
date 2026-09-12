@@ -22,14 +22,21 @@ export interface MaintenanceRequestSummary {
   apartment?: { id: string; ownerId: string; name: string };
 }
 
+export interface MaintenanceLineItem {
+  id: string;
+  description: string;
+  priceEUR: string;
+}
+
 export interface MaintenanceProposal {
   id: string;
   version: number;
-  contractorName: string;
+  contractorName: string | null;
   costEUR: string;
   description: string;
   status: "PENDING" | "APPROVED" | "REJECTED" | "SUPERSEDED";
   createdAt: string;
+  lineItems?: MaintenanceLineItem[];
 }
 
 export interface MaintenanceStatusEvent {
@@ -45,6 +52,7 @@ export interface MaintenanceRequestDetail extends MaintenanceRequestSummary {
   cancelReason: string | null;
   proposals?: MaintenanceProposal[];
   statusEvents?: MaintenanceStatusEvent[];
+  documents?: { id: string; category: string; fileName: string; createdAt: string }[];
 }
 
 export interface MaintenanceComment {
@@ -83,6 +91,11 @@ export function useMaintenanceComments(id: string | undefined) {
   });
 }
 
+export interface LineItemInput {
+  description: string;
+  priceEUR: number;
+}
+
 export function useCreateMaintenanceRequest() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -92,6 +105,7 @@ export function useCreateMaintenanceRequest() {
       description: string;
       urgent?: boolean;
       roomItemId?: string;
+      lineItems?: LineItemInput[];
     }) =>
       apiFetch<MaintenanceRequestSummary>("/maintenance-requests", {
         method: "POST",
@@ -133,8 +147,12 @@ export function useCancelMaintenanceRequest(id: string) {
 export function useCreateProposal(id: string) {
   const invalidate = useInvalidateRequest(id);
   return useMutation({
-    mutationFn: (input: { contractorName: string; costEUR: number; description: string }) =>
-      apiFetch(`/maintenance-requests/${id}/proposals`, { method: "POST", body: JSON.stringify(input) }),
+    mutationFn: (input: {
+      contractorName?: string;
+      costEUR?: number;
+      description: string;
+      lineItems?: LineItemInput[];
+    }) => apiFetch(`/maintenance-requests/${id}/proposals`, { method: "POST", body: JSON.stringify(input) }),
     onSuccess: invalidate,
   });
 }
@@ -142,10 +160,10 @@ export function useCreateProposal(id: string) {
 export function useDecideProposal(requestId: string, proposalId: string) {
   const invalidate = useInvalidateRequest(requestId);
   return useMutation({
-    mutationFn: (decision: "APPROVED" | "REJECTED") =>
+    mutationFn: (input: { decision: "APPROVED" | "REJECTED"; comment?: string }) =>
       apiFetch(`/maintenance-requests/${requestId}/proposals/${proposalId}/decision`, {
         method: "POST",
-        body: JSON.stringify({ decision }),
+        body: JSON.stringify(input),
       }),
     onSuccess: invalidate,
   });

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { StatusChip } from "@/components/status-chip";
+import { CreateMaintenanceRequestDialog } from "@/components/create-maintenance-request-dialog";
 import { ApiError } from "@/lib/api-client";
 
 const OUTCOME_LABEL: Record<InspectionOutcome, string> = {
@@ -70,10 +71,19 @@ function InspectionDialog({
   const { data: inspections } = useInspections(apartmentId);
   const complete = useCompleteInspection(apartmentId, inspectionId);
   const [activeItem, setActiveItem] = useState<{ item: RoomItem; outcome: InspectionOutcome } | null>(null);
+  const [showMaintenanceDialog, setShowMaintenanceDialog] = useState(false);
 
   const inspection = inspections?.find((i) => i.id === inspectionId);
   const resultByItemId = new Map((inspection?.results ?? []).map((r) => [r.roomItemId, r]));
   const totalItems = rooms?.reduce((sum, r) => sum + r.items.length, 0) ?? 0;
+  const flaggedItems = (rooms ?? []).flatMap((room) =>
+    room.items
+      .map((item) => ({ item, result: resultByItemId.get(item.id) }))
+      .filter(
+        (x): x is { item: RoomItem; result: NonNullable<typeof x.result> } =>
+          !!x.result && x.result.outcome !== "CONFIRMED_GOOD",
+      ),
+  );
 
   async function handleComplete() {
     try {
@@ -132,7 +142,12 @@ function InspectionDialog({
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="flex-wrap gap-2">
+            {flaggedItems.length > 0 && (
+              <Button type="button" variant="outline" onClick={() => setShowMaintenanceDialog(true)}>
+                Create maintenance task ({flaggedItems.length})
+              </Button>
+            )}
             <Button variant="outline" onClick={onClose}>
               Save & finish later
             </Button>
@@ -149,6 +164,18 @@ function InspectionDialog({
           item={activeItem.item}
           outcome={activeItem.outcome}
           onClose={() => setActiveItem(null)}
+        />
+      )}
+      {showMaintenanceDialog && (
+        <CreateMaintenanceRequestDialog
+          open={showMaintenanceDialog}
+          onOpenChange={setShowMaintenanceDialog}
+          apartmentId={apartmentId}
+          initialTitle="Repairs + cleaning"
+          initialLineItems={flaggedItems.map(({ item, result }) => ({
+            description: result.note ? `${item.name} — ${result.note}` : item.name,
+            priceEUR: "",
+          }))}
         />
       )}
     </>

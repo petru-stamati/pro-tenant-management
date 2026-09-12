@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { StorageService } from './storage.service';
 
@@ -10,6 +10,7 @@ import { StorageService } from './storage.service';
  */
 @Injectable()
 export class R2StorageService implements StorageService {
+  private readonly logger = new Logger(R2StorageService.name);
   private readonly client: S3Client;
   private readonly bucket: string;
 
@@ -31,7 +32,12 @@ export class R2StorageService implements StorageService {
   }
 
   async writeFile(s3Key: string, buffer: Buffer): Promise<void> {
-    await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: s3Key, Body: buffer }));
+    try {
+      await this.client.send(new PutObjectCommand({ Bucket: this.bucket, Key: s3Key, Body: buffer }));
+    } catch (err) {
+      this.logger.error(`R2 writeFile failed for key "${s3Key}" in bucket "${this.bucket}"`, err as Error);
+      throw err;
+    }
   }
 
   async readFile(s3Key: string): Promise<Buffer> {
@@ -39,7 +45,12 @@ export class R2StorageService implements StorageService {
       const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: s3Key }));
       const bytes = await response.Body!.transformToByteArray();
       return Buffer.from(bytes);
-    } catch {
+    } catch (err) {
+      // Logged with the real cause (auth/config/network) — the exception
+      // thrown to the caller stays generic (never leak bucket/credential
+      // details in an API response), but Render's logs show what actually
+      // happened instead of every failure looking like a missing file.
+      this.logger.error(`R2 readFile failed for key "${s3Key}" in bucket "${this.bucket}"`, err as Error);
       throw new NotFoundException('File not found in storage');
     }
   }
@@ -48,7 +59,8 @@ export class R2StorageService implements StorageService {
     try {
       await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: s3Key }));
       return true;
-    } catch {
+    } catch (err) {
+      this.logger.error(`R2 fileExists check failed for key "${s3Key}" in bucket "${this.bucket}"`, err as Error);
       return false;
     }
   }
