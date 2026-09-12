@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch, getAccessToken } from "@/lib/api-client";
+import { apiFetch, getAccessToken, refreshAccessToken } from "@/lib/api-client";
 import type { Paginated } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
@@ -99,12 +99,18 @@ export function useUploadDocument() {
 
       const formData = new FormData();
       formData.append("file", file);
-      const uploadRes = await fetch(`${API_URL}${uploadUrl}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { Authorization: `Bearer ${getAccessToken()}` },
-        body: formData,
-      });
+      const putFile = (token: string | null) =>
+        fetch(`${API_URL}${uploadUrl}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+      let uploadRes = await putFile(getAccessToken());
+      if (uploadRes.status === 401) {
+        const newToken = await refreshAccessToken();
+        if (newToken) uploadRes = await putFile(newToken);
+      }
       if (!uploadRes.ok) throw new Error("Upload failed");
 
       return apiFetch(`/documents/${documentId}/complete`, { method: "POST" });
@@ -152,13 +158,24 @@ export function useAssignInvoice() {
  * access token deliberately never lives in a cookie), so downloads go
  * through fetch + a synthetic anchor click on an object URL instead.
  */
-export async function downloadDocument(id: string, fileName: string) {
-  const res = await fetch(`${API_URL}/documents/${id}/download`, {
-    credentials: "include",
-    headers: { Authorization: `Bearer ${getAccessToken()}` },
-  });
+async function fetchDocumentBlob(id: string): Promise<Blob> {
+  const fetchWith = (token: string | null) =>
+    fetch(`${API_URL}/documents/${id}/download`, {
+      credentials: "include",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+  let res = await fetchWith(getAccessToken());
+  if (res.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) res = await fetchWith(newToken);
+  }
   if (!res.ok) throw new Error("Download failed");
-  const blob = await res.blob();
+  return res.blob();
+}
+
+export async function downloadDocument(id: string, fileName: string) {
+  const blob = await fetchDocumentBlob(id);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -169,12 +186,7 @@ export async function downloadDocument(id: string, fileName: string) {
 
 /** Like downloadDocument, but opens in a new tab for inline viewing instead of forcing a download. */
 export async function viewDocument(id: string) {
-  const res = await fetch(`${API_URL}/documents/${id}/download`, {
-    credentials: "include",
-    headers: { Authorization: `Bearer ${getAccessToken()}` },
-  });
-  if (!res.ok) throw new Error("Could not open document");
-  const blob = await res.blob();
+  const blob = await fetchDocumentBlob(id);
   const url = URL.createObjectURL(blob);
   window.open(url, "_blank");
 }

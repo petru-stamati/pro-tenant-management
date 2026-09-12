@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAccessToken } from "@/lib/api-client";
+import { getAccessToken, refreshAccessToken } from "@/lib/api-client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
@@ -24,10 +24,17 @@ export function useDocumentBlobUrl(documentId: string | undefined) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/documents/${documentId}/download`, {
-          credentials: "include",
-          headers: { Authorization: `Bearer ${getAccessToken()}` },
-        });
+        const fetchWith = (token: string | null) =>
+          fetch(`${API_URL}/documents/${documentId}/download`, {
+            credentials: "include",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+        let res = await fetchWith(getAccessToken());
+        if (res.status === 401) {
+          const newToken = await refreshAccessToken();
+          if (newToken) res = await fetchWith(newToken);
+        }
         if (!res.ok) {
           const reason = res.status === 404 ? "file missing in storage" : `HTTP ${res.status}`;
           throw new Error(reason);
