@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { StatusChip } from "@/components/status-chip";
 import { LineItemsEditor, draftsToLineItems, type LineItemDraft } from "@/components/line-items-editor";
 import { ApiError } from "@/lib/api-client";
-import { formatEUR, dateFormatter } from "@/lib/format";
+import { formatRON, dateFormatter } from "@/lib/format";
 
 const STATUS_LABEL: Record<string, string> = {
   REPORTED: "Reported",
@@ -188,7 +188,7 @@ export default function MaintenanceDetailPage() {
                         />
                       </div>
                       <div className="flex flex-col gap-2">
-                        <Label>Cost (EUR)</Label>
+                        <Label>Cost (RON)</Label>
                         <Input
                           type="number"
                           value={proposalForm.costEUR}
@@ -239,7 +239,7 @@ export default function MaintenanceDetailPage() {
                     <p className="mt-0.5 text-[12.5px] text-muted-foreground">{p.description}</p>
                   </div>
                   <div className="text-right">
-                    <div className="font-mono-tabular font-mono font-semibold">{formatEUR(p.costEUR)}</div>
+                    <div className="font-mono-tabular font-mono font-semibold">{formatRON(p.costEUR)}</div>
                     <StatusChip tone={p.status === "APPROVED" ? "paid" : p.status === "REJECTED" ? "unpaid" : "open"}>
                       {p.status.toLowerCase()}
                     </StatusChip>
@@ -250,7 +250,7 @@ export default function MaintenanceDetailPage() {
                     {p.lineItems.map((li) => (
                       <div key={li.id} className="flex items-center justify-between text-[12.5px]">
                         <span className="text-muted-foreground">{li.description}</span>
-                        <span className="font-mono-tabular font-mono">{formatEUR(li.priceEUR)}</span>
+                        <span className="font-mono-tabular font-mono">{formatRON(li.priceEUR)}</span>
                       </div>
                     ))}
                   </div>

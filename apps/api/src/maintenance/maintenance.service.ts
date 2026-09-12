@@ -70,7 +70,23 @@ export class MaintenanceService {
     const [data, total] = await Promise.all([
       scoped.maintenanceRequest.findMany({
         where,
-        include: { apartment: true, proposals: { include: { lineItems: true } } },
+        include: {
+          apartment: true,
+          proposals: { include: { lineItems: true } },
+          // Apartment-scoped queries feed the apartment's Activity timeline,
+          // which needs the status/comment trail without an extra per-request
+          // fetch — cheap here since it's always filtered to one apartment.
+          ...(apartmentId
+            ? {
+                statusEvents: { orderBy: { createdAt: 'asc' as const } },
+                comments: {
+                  orderBy: { createdAt: 'asc' as const },
+                  // Never `author: true` here — that would serialize passwordHash into the response.
+                  include: { author: { select: { id: true, firstName: true, lastName: true } } },
+                },
+              }
+            : {}),
+        },
         orderBy: { createdAt: 'desc' },
         ...skipTake(page, pageSize),
       }),
@@ -164,7 +180,7 @@ export class MaintenanceService {
         'OWNER',
         'PROPOSAL_PENDING_APPROVAL',
         `Repair quote — ${apartment.name}`,
-        `${dto.title} — needs your approval (${totalEUR} EUR).`,
+        `${dto.title} — needs your approval (${totalEUR} RON).`,
         'MaintenanceRequest',
         request.id,
       );
@@ -300,7 +316,7 @@ export class MaintenanceService {
       'OWNER',
       'PROPOSAL_PENDING_APPROVAL',
       request.title,
-      dto.contractorName ? `Quote from ${dto.contractorName} needs your approval.` : `Revised quote needs your approval (${costEUR} EUR).`,
+      dto.contractorName ? `Quote from ${dto.contractorName} needs your approval.` : `Revised quote needs your approval (${costEUR} RON).`,
       'MaintenanceRequest',
       requestId,
     );

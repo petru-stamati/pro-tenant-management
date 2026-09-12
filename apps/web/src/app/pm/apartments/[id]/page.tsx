@@ -14,6 +14,7 @@ import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { ApartmentInventory } from "@/components/apartment-inventory";
 import { ApartmentPhotosTab } from "@/components/apartment-photos-tab";
 import { ApartmentOverview } from "@/components/apartment-overview";
+import { ApartmentActivityTab } from "@/components/apartment-activity-tab";
 import { InspectButton } from "@/components/apartment-inspection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -69,6 +70,7 @@ export default function ApartmentDetailPage() {
 
       <Tabs defaultValue="photos">
         <TabsList>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
@@ -78,6 +80,10 @@ export default function ApartmentDetailPage() {
           <TabsTrigger value="history">Tenant History</TabsTrigger>
           {user?.role === "ADMIN" && <TabsTrigger value="notes">Notes 🔒</TabsTrigger>}
         </TabsList>
+
+        <TabsContent value="activity" className="mt-5">
+          <ApartmentActivityTab apartmentId={id} role="PM" />
+        </TabsContent>
 
         <TabsContent value="photos" className="mt-5">
           <ApartmentPhotosTab apartmentId={id} canEdit={true} />

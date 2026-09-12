@@ -20,6 +20,7 @@ import { useOwners } from "@/hooks/use-owners";
 import { useCreateTenant } from "@/hooks/use-tenants";
 import { useAuth } from "@/lib/auth-context";
 import { useDocuments, useUploadDocument, downloadDocument } from "@/hooks/use-documents";
+import { CreateMaintenanceRequestDialog } from "@/components/create-maintenance-request-dialog";
 import { ApiError } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -395,6 +396,7 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
   const [renewalFile, setRenewalFile] = useState<File | null>(null);
   const [renewError, setRenewError] = useState<string | null>(null);
   const [showSigningForm, setShowSigningForm] = useState(false);
+  const [showMaintenanceDialog, setShowMaintenanceDialog] = useState(false);
   const [signingForm, setSigningForm] = useState({
     startDate: "",
     endDate: "",
@@ -541,7 +543,11 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
   const waitingOnMe =
     (user?.role === "ADMIN" && task.assignedToRole === "ADMIN") || (user?.role === "OWNER" && task.assignedToRole === "OWNER");
 
+  const lastComment = task.comments && task.comments.length > 0 ? task.comments[task.comments.length - 1] : undefined;
+  const maintenanceInitialDescription = lastComment?.body || task.description;
+
   return (
+    <>
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
@@ -601,6 +607,18 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
               </p>
             )}
           </div>
+
+          {task.apartmentId && (
+            <div className="flex flex-col gap-1.5">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowMaintenanceDialog(true)}>
+                Create maintenance task
+              </Button>
+              <p className="text-[11.5px] text-muted-foreground">
+                Found repairs or cleaning needed for this apartment? Spin off a quoted maintenance task straight from this
+                comment thread — it'll go straight to the Owner for approval.
+              </p>
+            </div>
+          )}
 
           {showRenewForm && (
             <form onSubmit={handleCompleteRenewal} className="flex flex-col gap-3 rounded-md border border-border bg-accent/20 p-3">
@@ -779,14 +797,14 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
             ) : (
               <p className="text-[12.5px] text-muted-foreground">No comments yet.</p>
             )}
-            <form onSubmit={handleComment} className="flex gap-2">
-              <Input
+            <form onSubmit={handleComment} className="flex flex-col gap-2">
+              <Textarea
                 placeholder="Add a comment…"
+                rows={3}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                className="flex-1"
               />
-              <Button type="submit" size="sm" disabled={createComment.isPending || !comment.trim()}>
+              <Button type="submit" size="sm" disabled={createComment.isPending || !comment.trim()} className="self-end">
                 Send
               </Button>
             </form>
@@ -794,5 +812,15 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
         </div>
       </DialogContent>
     </Dialog>
+    {task.apartmentId && showMaintenanceDialog && (
+      <CreateMaintenanceRequestDialog
+        open={showMaintenanceDialog}
+        onOpenChange={setShowMaintenanceDialog}
+        apartmentId={task.apartmentId}
+        initialTitle="Repairs + cleaning"
+        initialDescription={maintenanceInitialDescription}
+      />
+    )}
+    </>
   );
 }

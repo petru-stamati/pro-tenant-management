@@ -10,6 +10,7 @@ import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { ApartmentInventory } from "@/components/apartment-inventory";
 import { ApartmentPhotosTab } from "@/components/apartment-photos-tab";
 import { ApartmentOverview } from "@/components/apartment-overview";
+import { ApartmentActivityTab } from "@/components/apartment-activity-tab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -39,12 +40,17 @@ export default function OwnerApartmentDetailPage() {
 
       <Tabs defaultValue="inventory">
         <TabsList>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
           <TabsTrigger value="lease">Current Lease</TabsTrigger>
           <TabsTrigger value="history">Previous Tenants</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="activity" className="mt-5">
+          <ApartmentActivityTab apartmentId={id} role="OWNER" />
+        </TabsContent>
 
         <TabsContent value="inventory" className="mt-5">
           <ApartmentInventory apartmentId={id} canEdit={false} />

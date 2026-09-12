@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatEUR } from "@/lib/format";
+import { formatRON } from "@/lib/format";
 
 export interface LineItemDraft {
   description: string;
@@ -46,7 +46,7 @@ export function LineItemsEditor({
           <Input
             type="number"
             step="0.01"
-            placeholder="EUR"
+            placeholder="RON"
             value={item.priceEUR}
             onChange={(e) => update(i, { priceEUR: e.target.value })}
             className="w-24"
@@ -62,7 +62,7 @@ export function LineItemsEditor({
       {items.length > 0 && (
         <div className="flex items-center justify-between rounded-md bg-accent/40 px-3 py-2 text-[13px]">
           <span className="text-muted-foreground">Total</span>
-          <span className="font-mono-tabular font-mono font-semibold">{formatEUR(total)}</span>
+          <span className="font-mono-tabular font-mono font-semibold">{formatRON(total)}</span>
         </div>
       )}
     </div>

@@ -20,6 +20,10 @@ export interface MaintenanceRequestSummary {
   status: MaintenanceStatus;
   createdAt: string;
   apartment?: { id: string; ownerId: string; name: string };
+  // Only populated when the list is filtered by apartmentId — feeds the
+  // apartment's Activity timeline without an extra per-request fetch.
+  statusEvents?: MaintenanceStatusEvent[];
+  comments?: MaintenanceComment[];
 }
 
 export interface MaintenanceLineItem {
@@ -61,6 +65,7 @@ export interface MaintenanceComment {
   visibleToTenant: boolean;
   createdAt: string;
   authorId: string;
+  author?: { id: string; firstName: string; lastName: string };
 }
 
 export function useMaintenanceRequests(params: { apartmentId?: string; status?: string; enabled?: boolean } = {}) {

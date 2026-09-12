@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusChip } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
-import { formatEUR, dateFormatter } from "@/lib/format";
+import { formatRON, dateFormatter } from "@/lib/format";
 
 const STATUS_LABEL: Record<string, string> = {
   REPORTED: "Reported",
@@ -78,7 +78,7 @@ export default function OwnerMaintenanceDetailPage() {
                 {pendingProposal.lineItems.map((li) => (
                   <div key={li.id} className="flex items-center justify-between text-[13px]">
                     <span className="text-muted-foreground">{li.description}</span>
-                    <span className="font-mono-tabular font-mono">{formatEUR(li.priceEUR)}</span>
+                    <span className="font-mono-tabular font-mono">{formatRON(li.priceEUR)}</span>
                   </div>
                 ))}
               </div>
@@ -86,7 +86,7 @@ export default function OwnerMaintenanceDetailPage() {
             <div className="mt-2 flex items-center justify-between border-t border-border pt-2">
               <span className="text-[13px] text-muted-foreground">Total</span>
               <div className="font-mono-tabular font-mono text-lg font-semibold">
-                {formatEUR(pendingProposal.costEUR)}
+                {formatRON(pendingProposal.costEUR)}
               </div>
             </div>
           </div>
@@ -124,7 +124,7 @@ export default function OwnerMaintenanceDetailPage() {
                     <p className="mt-0.5 text-[12.5px] text-muted-foreground">{p.description}</p>
                   </div>
                   <div className="text-right">
-                    <div className="font-mono-tabular font-mono font-semibold">{formatEUR(p.costEUR)}</div>
+                    <div className="font-mono-tabular font-mono font-semibold">{formatRON(p.costEUR)}</div>
                     <StatusChip tone={p.status === "APPROVED" ? "paid" : p.status === "REJECTED" ? "unpaid" : "open"}>
                       {p.status.toLowerCase()}
                     </StatusChip>
@@ -135,7 +135,7 @@ export default function OwnerMaintenanceDetailPage() {
                     {p.lineItems.map((li) => (
                       <div key={li.id} className="flex items-center justify-between text-[12.5px]">
                         <span className="text-muted-foreground">{li.description}</span>
-                        <span className="font-mono-tabular font-mono">{formatEUR(li.priceEUR)}</span>
+                        <span className="font-mono-tabular font-mono">{formatRON(li.priceEUR)}</span>
                       </div>
                     ))}
                   </div>
