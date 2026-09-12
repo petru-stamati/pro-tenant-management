@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionsService } from '../common/permissions.service';
@@ -13,6 +13,8 @@ import { AssignInvoiceDto } from './dto/assign-invoice.dto';
 
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger(DocumentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: PermissionsService,
@@ -183,7 +185,11 @@ export class DocumentsService {
 
   async downloadBuffer(user: AuthenticatedUser, id: string) {
     const document = await this.scopedFind(user, id);
-    if (!document) throw new NotFoundException('Document not found');
+    if (!document) {
+      this.logger.error(`downloadBuffer: document "${id}" not found in scope for user "${user.id}" (role ${user.roleKey})`);
+      throw new NotFoundException('Document not found');
+    }
+    this.logger.log(`downloadBuffer: document "${id}" found, s3Key="${document.s3Key}" — reading from storage`);
     const buffer = await this.storage.readFile(document.s3Key);
     return { buffer, fileName: document.fileName, mimeType: document.mimeType };
   }
