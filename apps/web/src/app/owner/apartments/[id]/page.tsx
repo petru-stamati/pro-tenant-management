@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import { useApartment, useTenantHistory } from "@/hooks/use-apartments";
 import { useLeases } from "@/hooks/use-leases";
 import { useDocuments, downloadDocument } from "@/hooks/use-documents";
+import { useApartmentInvoices } from "@/hooks/use-apartment-invoices";
+import { computePaymentStats, paymentReliabilitySummary } from "@/lib/payment-stats";
 import { ApartmentFinancialsTab } from "@/components/apartment-financials-tab";
 import { ApartmentInventory } from "@/components/apartment-inventory";
 import { ApartmentPhotosTab } from "@/components/apartment-photos-tab";
@@ -140,6 +142,7 @@ function CurrentLeaseTab({ apartmentId, currentLeaseId }: { apartmentId: string;
 
 function TenantHistoryTab({ apartmentId }: { apartmentId: string }) {
   const { data, isLoading } = useTenantHistory(apartmentId);
+  const { data: invoices } = useApartmentInvoices({ apartmentId });
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (!data || data.length === 0) {
     return (
@@ -158,20 +161,31 @@ function TenantHistoryTab({ apartmentId }: { apartmentId: string }) {
             <TableHead>Start</TableHead>
             <TableHead>End</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Payment reliability</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.map((lease) => (
-            <TableRow key={lease.id}>
-              <TableCell>
-                {lease.tenant.firstName} {lease.tenant.lastName}
-              </TableCell>
-              <TableCell className="font-mono-tabular font-mono">{formatEUR(lease.rentAmountEUR)}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{dateFormatter.format(new Date(lease.startDate))}</TableCell>
-              <TableCell className="font-mono-tabular font-mono">{dateFormatter.format(new Date(lease.endDate))}</TableCell>
-              <TableCell>{lease.status}</TableCell>
-            </TableRow>
-          ))}
+          {data.map((lease) => {
+            const stats = computePaymentStats((invoices?.data ?? []).filter((inv) => inv.leaseId === lease.id));
+            const summary = paymentReliabilitySummary(stats);
+            return (
+              <TableRow key={lease.id}>
+                <TableCell>
+                  {lease.tenant.firstName} {lease.tenant.lastName}
+                </TableCell>
+                <TableCell className="font-mono-tabular font-mono">{formatEUR(lease.rentAmountEUR)}</TableCell>
+                <TableCell className="font-mono-tabular font-mono">{dateFormatter.format(new Date(lease.startDate))}</TableCell>
+                <TableCell className="font-mono-tabular font-mono">{dateFormatter.format(new Date(lease.endDate))}</TableCell>
+                <TableCell>{lease.status}</TableCell>
+                <TableCell>
+                  <StatusChip tone={summary.tone}>{summary.text}</StatusChip>
+                  {stats.onTimeRate !== null && (
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">{stats.onTimeRate}% on-time</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </Panel>

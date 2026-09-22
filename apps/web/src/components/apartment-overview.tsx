@@ -4,7 +4,10 @@ import { useMemo } from "react";
 import { toast } from "sonner";
 import { useDocuments, downloadDocument } from "@/hooks/use-documents";
 import { useDocumentBlobUrl } from "@/hooks/use-document-blob-url";
+import { useApartmentInvoices } from "@/hooks/use-apartment-invoices";
 import { Button } from "@/components/ui/button";
+import { StatusChip } from "@/components/status-chip";
+import { computePaymentStats, paymentReliabilitySummary } from "@/lib/payment-stats";
 import { formatEUR, dateFormatter } from "@/lib/format";
 import type { ApartmentDetail } from "@/hooks/use-apartments";
 
@@ -16,6 +19,7 @@ import type { ApartmentDetail } from "@/hooks/use-apartments";
  */
 export function ApartmentOverview({ apartment }: { apartment: ApartmentDetail }) {
   const { data: docs } = useDocuments({ apartmentId: apartment.id });
+  const { data: invoices } = useApartmentInvoices({ apartmentId: apartment.id });
 
   const photos = useMemo(
     () =>
@@ -27,6 +31,13 @@ export function ApartmentOverview({ apartment }: { apartment: ApartmentDetail })
   const contract = docs?.data.find((d) => d.category === "CONTRACT");
   const { url: heroUrl } = useDocumentBlobUrl(apartment.coverDocumentId ?? photos[0]?.id);
   const tenant = apartment.currentLease?.tenant;
+
+  // Scoped to the current lease only — a past tenant's record shouldn't color
+  // how the person renting it right now looks at a glance.
+  const paymentStats = computePaymentStats(
+    (invoices?.data ?? []).filter((inv) => apartment.currentLeaseId && inv.leaseId === apartment.currentLeaseId),
+  );
+  const paymentSummary = paymentReliabilitySummary(paymentStats);
 
   async function handleContract() {
     if (!contract) return;
@@ -52,6 +63,14 @@ export function ApartmentOverview({ apartment }: { apartment: ApartmentDetail })
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <InfoItem label="Tenant" value={tenant ? `${tenant.firstName} ${tenant.lastName}` : "Vacant"} />
+        {tenant && (
+          <div className="rounded-[10px] border border-border bg-card px-4 py-3">
+            <div className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Payment reliability
+            </div>
+            <StatusChip tone={paymentSummary.tone}>{paymentSummary.text}</StatusChip>
+          </div>
+        )}
         <InfoItem label="Rent" value={apartment.currentLease ? formatEUR(apartment.currentLease.rentAmountEUR) : "—"} />
         <InfoItem
           label="Lease ends"

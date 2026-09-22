@@ -7,6 +7,7 @@ import { useTasks } from "@/hooks/use-tasks";
 import { TASK_STATUS_LABEL, TASK_STATUS_TONE } from "@/hooks/use-open-items";
 import { InvoiceDetailDialog, TYPE_LABEL, monthLabel } from "@/components/payments-board";
 import { StatusChip, paymentStatusTone } from "@/components/status-chip";
+import { computePaymentStats } from "@/lib/payment-stats";
 import { formatRON } from "@/lib/format";
 
 const dateFormatter = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -42,32 +43,16 @@ export function ApartmentFinancialsTab({ apartmentId, canEdit }: { apartmentId: 
     return { outstanding, paid };
   }, [sortedInvoices]);
 
-  /**
-   * How reliably this apartment's rent shows up on time — derived from each
-   * fully-paid invoice's last payment date vs. its due date, so it reflects
-   * "when did the money actually land" rather than just "is it paid".
-   */
+  // Scoped to the CURRENT tenant's lease only — an apartment-wide figure would
+  // blend in whoever lived here before, misrepresenting the tenant renting it
+  // right now. See Tenant History for each past tenant's own figure.
+  const currentTenantName = apartment?.currentLease?.tenant
+    ? `${apartment.currentLease.tenant.firstName} ${apartment.currentLease.tenant.lastName}`
+    : null;
   const paymentStats = useMemo(() => {
-    const paidInvoices = sortedInvoices.filter((inv) => inv.status === "PAID" && (inv.applications?.length ?? 0) > 0);
-    const daysLateList = paidInvoices.map((inv) => {
-      const lastPaymentMs = inv.applications!.reduce(
-        (latest, app) => Math.max(latest, new Date(app.paymentConfirmation.paymentDate).getTime()),
-        0,
-      );
-      const dueMs = new Date(inv.dueDate).getTime();
-      return Math.round((lastPaymentMs - dueMs) / 86_400_000);
-    });
-    const onTimeRate =
-      paidInvoices.length > 0
-        ? Math.round((daysLateList.filter((d) => d <= 0).length / paidInvoices.length) * 100)
-        : null;
-    const avgDaysLate =
-      daysLateList.length > 0 ? Math.round(daysLateList.reduce((sum, d) => sum + d, 0) / daysLateList.length) : null;
-    const overdueCount = sortedInvoices.filter(
-      (inv) => inv.status !== "PAID" && new Date(inv.dueDate).getTime() < Date.now(),
-    ).length;
-    return { onTimeRate, avgDaysLate, overdueCount, paidCount: paidInvoices.length };
-  }, [sortedInvoices]);
+    if (!apartment?.currentLeaseId) return computePaymentStats([]);
+    return computePaymentStats(sortedInvoices.filter((inv) => inv.leaseId === apartment.currentLeaseId));
+  }, [sortedInvoices, apartment?.currentLeaseId]);
 
   const sortedTasks = useMemo(
     () =>
@@ -109,20 +94,25 @@ export function ApartmentFinancialsTab({ apartmentId, canEdit }: { apartmentId: 
       </div>
 
       {paymentStats.paidCount > 0 || paymentStats.overdueCount > 0 ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <SummaryStat
-            label="On-time payment rate"
-            value={paymentStats.onTimeRate !== null ? `${paymentStats.onTimeRate}%` : "—"}
-          />
-          <SummaryStat
-            label={paymentStats.avgDaysLate !== null && paymentStats.avgDaysLate < 0 ? "Avg. days early" : "Avg. days late"}
-            value={
-              paymentStats.avgDaysLate !== null
-                ? `${Math.abs(paymentStats.avgDaysLate)} day${Math.abs(paymentStats.avgDaysLate) === 1 ? "" : "s"}`
-                : "—"
-            }
-          />
-          <SummaryStat label="Currently overdue" value={String(paymentStats.overdueCount)} />
+        <div className="flex flex-col gap-2">
+          {currentTenantName && (
+            <p className="text-[12px] text-muted-foreground">For {currentTenantName}&rsquo;s current tenancy</p>
+          )}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <SummaryStat
+              label="On-time payment rate"
+              value={paymentStats.onTimeRate !== null ? `${paymentStats.onTimeRate}%` : "—"}
+            />
+            <SummaryStat
+              label={paymentStats.avgDaysLate !== null && paymentStats.avgDaysLate < 0 ? "Avg. days early" : "Avg. days late"}
+              value={
+                paymentStats.avgDaysLate !== null
+                  ? `${Math.abs(paymentStats.avgDaysLate)} day${Math.abs(paymentStats.avgDaysLate) === 1 ? "" : "s"}`
+                  : "—"
+              }
+            />
+            <SummaryStat label="Currently overdue" value={String(paymentStats.overdueCount)} />
+          </div>
         </div>
       ) : null}
 
