@@ -44,6 +44,7 @@ export default function ApartmentDetailPage() {
   const { user } = useAuth();
   const { data: apartment, isLoading } = useApartment(id);
   const { data: owners } = useOwners();
+  const [tab, setTab] = useState("photos");
 
   if (isLoading || !apartment) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
@@ -53,9 +54,10 @@ export default function ApartmentDetailPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
+      <p className="mb-1 text-[12px] text-muted-foreground">Apartments / {apartment.name}</p>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="mb-1 text-[22px] font-semibold">{apartment.name}</h1>
+          <h1 className="mb-1 font-heading text-[32px] font-semibold tracking-[-0.7px]">{apartment.name}</h1>
           <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
             {apartment.city}
             {apartment.sector ? `, ${apartment.sector}` : ""} · Owned by {ownerName ?? "—"}
@@ -68,10 +70,10 @@ export default function ApartmentDetailPage() {
         </div>
       </div>
 
-      <ApartmentOverview apartment={apartment} />
+      <ApartmentOverview apartment={apartment} onOpenPhotos={() => setTab("photos")} />
 
-      <Tabs defaultValue="photos">
-        <TabsList>
+      <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
+        <TabsList variant="line">
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="photos">Photos</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>

@@ -22,6 +22,7 @@ import { formatEUR, dateFormatter } from "@/lib/format";
 export default function OwnerApartmentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: apartment, isLoading } = useApartment(id);
+  const [tab, setTab] = useState("inventory");
 
   if (isLoading || !apartment) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
@@ -29,8 +30,9 @@ export default function OwnerApartmentDetailPage() {
 
   return (
     <div className="mx-auto max-w-[1100px]">
+      <p className="mb-1 text-[12px] text-muted-foreground">Apartments / {apartment.name}</p>
       <div className="mb-5">
-        <h1 className="mb-1 text-[22px] font-semibold">{apartment.name}</h1>
+        <h1 className="mb-1 font-heading text-[32px] font-semibold tracking-[-0.7px]">{apartment.name}</h1>
         <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
           {apartment.addressLine}, {apartment.city}
           {apartment.sector ? `, ${apartment.sector}` : ""}
@@ -38,10 +40,10 @@ export default function OwnerApartmentDetailPage() {
         </p>
       </div>
 
-      <ApartmentOverview apartment={apartment} />
+      <ApartmentOverview apartment={apartment} onOpenPhotos={() => setTab("photos")} />
 
-      <Tabs defaultValue="inventory">
-        <TabsList>
+      <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
+        <TabsList variant="line">
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="inventory">Inventory</TabsTrigger>
           <TabsTrigger value="financials">Financials</TabsTrigger>
