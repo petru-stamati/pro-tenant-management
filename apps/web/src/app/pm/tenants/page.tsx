@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useTenants, useCreateTenant, useTenant, useInviteTenant } from "@/hooks/use-tenants";
 import { Button } from "@/components/ui/button";
@@ -13,47 +13,81 @@ import { ApiError } from "@/lib/api-client";
 
 export default function TenantsPage() {
   const { data: tenants, isLoading } = useTenants();
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return tenants?.data ?? [];
+    return (tenants?.data ?? []).filter(
+      (t) =>
+        `${t.firstName} ${t.lastName}`.toLowerCase().includes(q) ||
+        t.email.toLowerCase().includes(q) ||
+        (t.phone ?? "").toLowerCase().includes(q),
+    );
+  }, [tenants, search]);
 
   return (
-    <div className="mx-auto max-w-[1000px]">
+    <div className="mx-auto max-w-full">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[23px] font-semibold">Tenants</h1>
+          <h1 className="font-heading text-[23px] font-semibold">Tenants</h1>
           <p className="text-[13.5px] text-muted-foreground">{tenants?.data.length ?? 0} tenant profiles</p>
         </div>
         <CreateTenantDialog />
       </div>
 
-      <div className="rounded-[14px] border border-border bg-card shadow-sm">
+      <div className="mb-4">
+        <Input
+          placeholder="Search by name, email, or phone…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-9 max-w-[320px]"
+        />
+      </div>
+
+      <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-sm">
         {isLoading ? (
           <p className="p-5 text-sm text-muted-foreground">Loading…</p>
-        ) : tenants && tenants.data.length > 0 ? (
+        ) : filtered.length > 0 ? (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Phone</TableHead>
+                <TableHead>Current lease</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tenants.data.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">
-                    {t.firstName} {t.lastName}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{t.email}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.phone ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <InviteTenantDialog tenantId={t.id} tenantName={`${t.firstName} ${t.lastName}`} />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {filtered.map((t) => {
+                const currentLease = t.leases?.[0];
+                return (
+                  <TableRow key={t.id}>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent font-heading text-[11px] font-semibold text-accent-foreground">
+                          {t.firstName[0]}
+                          {t.lastName[0]}
+                        </div>
+                        {t.firstName} {t.lastName}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{t.email}</TableCell>
+                    <TableCell className="font-mono text-[12.5px] text-muted-foreground">{t.phone ?? "—"}</TableCell>
+                    <TableCell>
+                      {currentLease ? currentLease.apartment.name : <span className="text-muted-foreground italic">No active lease</span>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <InviteTenantDialog tenantId={t.id} tenantName={`${t.firstName} ${t.lastName}`} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         ) : (
-          <p className="p-5 text-sm text-muted-foreground">No tenants yet.</p>
+          <p className="p-5 text-sm text-muted-foreground">No tenants match this search.</p>
         )}
       </div>
     </div>

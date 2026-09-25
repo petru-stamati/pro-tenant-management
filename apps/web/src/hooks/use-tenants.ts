@@ -8,6 +8,8 @@ export interface Tenant {
   lastName: string;
   email: string;
   phone: string | null;
+  // Just the active one (if any) — see TenantsService.list.
+  leases?: { id: string; apartment: { id: string; name: string } }[];
 }
 
 export function useTenants(search?: string, options: { enabled?: boolean } = {}) {

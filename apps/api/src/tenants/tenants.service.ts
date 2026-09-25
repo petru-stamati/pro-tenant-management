@@ -24,7 +24,15 @@ export class TenantsService {
         }
       : {};
     const [data, total] = await Promise.all([
-      this.prisma.client.tenant.findMany({ where, orderBy: { createdAt: 'desc' }, ...skipTake(page, pageSize) }),
+      this.prisma.client.tenant.findMany({
+        where,
+        // Just the active lease (if any) for the Tenants list's "Current lease"
+        // column -- the full lease history is only needed on the single-tenant
+        // fetch (findOne), not worth the extra payload on every list row.
+        include: { leases: { where: { status: 'ACTIVE' }, take: 1, include: { apartment: true } } },
+        orderBy: { createdAt: 'desc' },
+        ...skipTake(page, pageSize),
+      }),
       this.prisma.client.tenant.count({ where }),
     ]);
     return paginate(data, total, page, pageSize);
