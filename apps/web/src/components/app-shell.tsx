@@ -460,9 +460,15 @@ function AppShellInner({ role, children }: { role: Role; children: React.ReactNo
     <div className="min-h-screen md:grid md:grid-cols-[272px_1fr]">
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-sidebar-accent/40 bg-sidebar px-4 py-3 text-sidebar-foreground md:hidden">
         <Logo compact />
-        <button onClick={() => setNavOpen(true)} aria-label="Open menu" className="rounded-md p-1.5 text-[#a9aea6] hover:text-white">
-          <MenuIcon className="h-5 w-5" />
-        </button>
+        {role === "tenant" ? (
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary font-heading text-[11px] font-semibold text-white">
+            {initials}
+          </div>
+        ) : (
+          <button onClick={() => setNavOpen(true)} aria-label="Open menu" className="rounded-md p-1.5 text-[#a9aea6] hover:text-white">
+            <MenuIcon className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       {navOpen && <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />}
@@ -471,16 +477,42 @@ function AppShellInner({ role, children }: { role: Role; children: React.ReactNo
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-[272px] -translate-x-full bg-[#0a0d0b] transition-transform duration-200 ease-out",
           "md:sticky md:top-0 md:h-screen md:translate-x-0",
-          navOpen && "translate-x-0",
+          role === "tenant" ? "hidden md:flex" : navOpen && "translate-x-0",
         )}
       >
         {sidebarBody}
       </aside>
 
-      <main className="overflow-auto p-4 sm:p-6 md:p-8">{children}</main>
+      <main className={cn("overflow-auto p-4 sm:p-6 md:p-8", role === "tenant" && "pb-20 md:pb-8")}>{children}</main>
+
+      {role === "tenant" && <TenantTabBar />}
 
       <CommandPalette groups={groups} open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
+  );
+}
+
+function TenantTabBar() {
+  const pathname = usePathname();
+  const tabs = [
+    { label: "Home", href: "/tenant", icon: HomeIcon },
+    { label: "Invoices", href: "/tenant/invoices", icon: ReceiptIcon },
+    { label: "Documents", href: "/tenant/documents", icon: FolderIcon },
+    { label: "Requests", href: "/tenant/maintenance", icon: WrenchIcon },
+  ];
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-30 flex items-stretch border-t border-border bg-card md:hidden">
+      {tabs.map((tab) => {
+        const active = pathname === tab.href || pathname.startsWith(tab.href + "/");
+        const Icon = tab.icon;
+        return (
+          <Link key={tab.href} href={tab.href} className="flex flex-1 flex-col items-center gap-1 py-2.5">
+            {active ? <Slash height={14} /> : <Icon className="h-[18px] w-[18px] text-muted-foreground" />}
+            <span className={cn("text-[10.5px]", active ? "font-semibold text-foreground" : "text-muted-foreground")}>{tab.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 
