@@ -2,15 +2,19 @@
 
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { DownloadIcon, XIcon } from "lucide-react";
 import { useDocuments, useUploadDocument, downloadDocument, type DocumentItem } from "@/hooks/use-documents";
 import { useApartments } from "@/hooks/use-apartments";
+import { useScope } from "@/lib/scope-context";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slash } from "@/components/ui/slash";
 import { ApiError } from "@/lib/api-client";
 import { dateFormatter } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const CATEGORIES = [
   "CONTRACT",
@@ -43,7 +47,8 @@ function monthLabel(month: string) {
 }
 
 export default function DocumentsPage() {
-  const { data: apartments } = useApartments();
+  const scope = useScope();
+  const { data: apartments } = useApartments(scope?.ownerId ? { ownerId: scope.ownerId } : {});
   const [apartmentId, setApartmentId] = useState("");
   const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
@@ -72,11 +77,13 @@ export default function DocumentsPage() {
     return { lease, meters, invoices, other };
   }, [filtered]);
 
+  const selectedApartmentName = apartments?.data.find((a) => a.id === apartmentId)?.name;
+
   return (
-    <div className="mx-auto max-w-[1100px]">
+    <div className="mx-auto max-w-[1200px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[23px] font-semibold">Documents</h1>
+          <h1 className="font-heading text-[23px] font-semibold">Documents</h1>
           <p className="text-[13.5px] text-muted-foreground">{filtered.length} files</p>
         </div>
         <UploadDialog />
@@ -85,19 +92,29 @@ export default function DocumentsPage() {
       <div className="mb-5 flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1.5">
           <Label className="text-[11.5px] text-muted-foreground">Apartment</Label>
-          <Select value={apartmentId} onValueChange={(v) => setApartmentId(v ?? "")}>
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="All apartments" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">All apartments</SelectItem>
-              {apartments?.data.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {selectedApartmentName ? (
+            <button
+              onClick={() => setApartmentId("")}
+              className="flex h-9 items-center gap-1.5 rounded-md border border-primary bg-accent px-3 text-[13px] font-medium text-accent-foreground"
+            >
+              {selectedApartmentName}
+              <XIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <Select value={apartmentId} onValueChange={(v) => setApartmentId(v ?? "")}>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="All apartments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All apartments</SelectItem>
+                {apartments?.data.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label className="text-[11.5px] text-muted-foreground">Category</Label>
@@ -127,18 +144,12 @@ export default function DocumentsPage() {
         <div className="rounded-[14px] border border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
           No documents match this filter.
         </div>
-      ) : apartmentId ? (
+      ) : (
         <div className="flex flex-col gap-6">
           <DocumentGroup title="Lease" docs={groups.lease} />
           <DocumentGroup title="Meters" docs={groups.meters} />
           <DocumentGroup title="Invoices" docs={groups.invoices} />
           <DocumentGroup title="Other documents" docs={groups.other} />
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {filtered.map((doc) => (
-            <DocumentCard key={doc.id} doc={doc} />
-          ))}
         </div>
       )}
     </div>
@@ -149,10 +160,11 @@ function DocumentGroup({ title, docs }: { title: string; docs: DocumentItem[] })
   if (docs.length === 0) return null;
   return (
     <div>
-      <h3 className="mb-2.5 text-[13.5px] font-semibold text-muted-foreground">
+      <h3 className="mb-2.5 flex items-center gap-2 text-[13.5px] font-semibold text-muted-foreground">
+        <Slash />
         {title} <span className="font-normal">({docs.length})</span>
       </h3>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {docs.map((doc) => (
           <DocumentCard key={doc.id} doc={doc} />
         ))}
@@ -160,6 +172,14 @@ function DocumentGroup({ title, docs }: { title: string; docs: DocumentItem[] })
     </div>
   );
 }
+
+const FILE_TYPE_COLOR: Record<string, string> = {
+  PDF: "bg-destructive/10 text-destructive",
+  JPG: "bg-accent text-accent-foreground",
+  JPEG: "bg-accent text-accent-foreground",
+  PNG: "bg-accent text-accent-foreground",
+  HEIC: "bg-accent text-accent-foreground",
+};
 
 function DocumentCard({ doc }: { doc: DocumentItem }) {
   const [downloading, setDownloading] = useState(false);
@@ -181,19 +201,20 @@ function DocumentCard({ doc }: { doc: DocumentItem }) {
     <button
       onClick={handleDownload}
       disabled={downloading}
-      className="rounded-[12px] border border-border bg-card p-4 text-center shadow-sm transition-shadow hover:shadow-md disabled:opacity-60"
+      className="relative rounded-[12px] border border-border bg-card p-3.5 text-left shadow-sm transition-shadow hover:shadow-md disabled:opacity-60"
     >
-      <div className="mx-auto mb-2.5 flex h-[38px] w-[38px] items-center justify-center rounded-[9px] bg-accent font-heading text-xs font-bold text-accent-foreground">
+      <DownloadIcon className="absolute top-3 right-3 h-3.5 w-3.5 text-muted-foreground" />
+      <div className={cn("mb-2.5 flex h-[38px] w-[38px] items-center justify-center rounded-[9px] font-heading text-[10px] font-bold", FILE_TYPE_COLOR[ext] ?? "bg-muted text-muted-foreground")}>
         {ext.slice(0, 4)}
       </div>
-      <div className="mb-0.5 truncate text-[12.5px] font-semibold">{doc.fileName}</div>
+      <div className="mb-0.5 truncate pr-4 text-[12.5px] font-semibold">{doc.fileName}</div>
       <div className="text-[11px] text-muted-foreground">
         {doc.utilityRecord
           ? `${doc.utilityRecord.utilityType.replace(/_/g, " ")} · ${monthLabel(doc.utilityRecord.periodMonth.slice(0, 7))}`
           : doc.category.replace(/_/g, " ")}{" "}
         · {formatSize(doc.sizeBytes)}
       </div>
-      <div className="mt-0.5 text-[11px] text-muted-foreground">{dateFormatter.format(new Date(doc.createdAt))}</div>
+      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">{dateFormatter.format(new Date(doc.createdAt))}</div>
     </button>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ZapIcon, FlameIcon, DropletIcon, ChevronLeftIcon, ChevronRightIcon, CameraIcon } from "lucide-react";
 import {
   useUtilityRecords,
   useCreateUtilityRecord,
@@ -20,13 +21,33 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Slash } from "@/components/ui/slash";
 import { ApiError } from "@/lib/api-client";
 import { formatRON } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 const UTILITY_LABEL: Record<TrackedUtilityType, string> = {
   ELECTRICITY: "Electricity",
   GAS: "Gas",
   COLD_WATER: "Water",
+};
+
+const UTILITY_ICON: Record<TrackedUtilityType, typeof ZapIcon> = {
+  ELECTRICITY: ZapIcon,
+  GAS: FlameIcon,
+  COLD_WATER: DropletIcon,
+};
+
+const UTILITY_COLOR: Record<TrackedUtilityType, string> = {
+  ELECTRICITY: "text-warning bg-warning-soft",
+  GAS: "text-destructive bg-destructive/10",
+  COLD_WATER: "text-info bg-info-soft",
+};
+
+const UTILITY_UNIT: Record<TrackedUtilityType, string> = {
+  ELECTRICITY: "kWh",
+  GAS: "m³",
+  COLD_WATER: "m³",
 };
 
 function currentMonth() {
@@ -62,32 +83,72 @@ export default function UtilitiesPage() {
   const ownerName = (ownerId: string | undefined) => owners?.data.find((o) => o.id === ownerId)?.companyName ?? "—";
 
   const isLoading = apartmentsLoading || recordsLoading;
+  const totalApartments = apartments?.data.length ?? 0;
+
+  const summaryFor = (t: TrackedUtilityType) => {
+    const typeRecords = (records?.data ?? []).filter((r) => r.utilityType === t);
+    const totalRON = typeRecords.reduce((sum, r) => sum + Number(r.invoiceAmountRON ?? 0), 0);
+    const totalUsage = typeRecords.reduce((sum, r) => sum + Number(r.consumption ?? 0), 0);
+    return { logged: typeRecords.length, totalRON, totalUsage };
+  };
 
   return (
     <div className="mx-auto max-w-[1200px]">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-[23px] font-semibold">Utilities</h1>
+          <h1 className="font-heading text-[23px] font-semibold">Utilities</h1>
           <p className="text-[13.5px] text-muted-foreground">
-            {apartments?.data.length ?? 0} apartments · amounts shown are VAT incl.
+            {totalApartments} apartments · amounts shown are VAT incl.
           </p>
         </div>
-        <UtilityRatesDialog />
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+            <button onClick={() => setMonth((m) => shiftMonth(m, -1))} className="rounded-md p-1.5 hover:bg-muted">
+              <ChevronLeftIcon className="h-4 w-4" />
+            </button>
+            <div className="min-w-[140px] px-2 text-center text-[13px] font-medium">{monthLabel(month)}</div>
+            <button onClick={() => setMonth((m) => shiftMonth(m, 1))} className="rounded-md p-1.5 hover:bg-muted">
+              <ChevronRightIcon className="h-4 w-4" />
+            </button>
+          </div>
+          {month !== currentMonth() && (
+            <Button variant="outline" size="sm" onClick={() => setMonth(currentMonth())}>
+              Today
+            </Button>
+          )}
+          <UtilityRatesDialog />
+        </div>
       </div>
 
-      <div className="mb-4 flex items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
-          ← Prev
-        </Button>
-        <div className="min-w-[160px] text-center text-[15px] font-semibold">{monthLabel(month)}</div>
-        <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
-          Next →
-        </Button>
-        {month !== currentMonth() && (
-          <Button variant="outline" size="sm" onClick={() => setMonth(currentMonth())}>
-            Today
-          </Button>
-        )}
+      <div className="mb-5 grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+        {TRACKED_UTILITY_TYPES.map((t) => {
+          const s = summaryFor(t);
+          const Icon = UTILITY_ICON[t];
+          return (
+            <div key={t} className="rounded-[16px] border border-border bg-card p-4 shadow-sm">
+              <div className="mb-2.5 flex items-center gap-2">
+                <div className={cn("flex h-7 w-7 items-center justify-center rounded-[8px]", UTILITY_COLOR[t])}>
+                  <Icon className="h-3.5 w-3.5" />
+                </div>
+                <span className="font-heading text-[13.5px] font-semibold">{UTILITY_LABEL[t]}</span>
+                <span className="ml-auto font-mono text-[12px] text-muted-foreground">
+                  {s.logged} / {totalApartments}
+                </span>
+              </div>
+              <div className="mb-1 flex items-baseline gap-3">
+                <span className="font-mono-tabular font-mono text-[18px] font-semibold">{formatRON(s.totalRON)}</span>
+                <span className="font-mono text-[11.5px] text-muted-foreground">
+                  {s.totalUsage.toLocaleString()} {UTILITY_UNIT[t]}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-[2px]">
+                {apartments?.data.map((a) => (
+                  <Slash key={a.id} width={3} height={11} className={recordLookup.has(`${a.id}:${t}`) ? "bg-primary" : "bg-muted"} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="overflow-x-auto rounded-[14px] border border-border bg-card shadow-sm">
@@ -97,9 +158,9 @@ export default function UtilitiesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                <th className="p-3 font-medium text-muted-foreground">Apartment</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Apartment</th>
                 {TRACKED_UTILITY_TYPES.map((t) => (
-                  <th key={t} className="p-3 font-medium text-muted-foreground">
+                  <th key={t} className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">
                     {UTILITY_LABEL[t]}
                   </th>
                 ))}
@@ -107,7 +168,7 @@ export default function UtilitiesPage() {
             </thead>
             <tbody>
               {apartments.data.map((a) => (
-                <tr key={a.id} className="border-b border-border last:border-0">
+                <tr key={a.id} className="border-b border-divider last:border-0">
                   <td className="p-3">
                     <div className="font-medium">{a.name}</div>
                     <div className="text-[11.5px] text-muted-foreground">{ownerName(a.ownerId)}</div>
@@ -117,21 +178,27 @@ export default function UtilitiesPage() {
                     return (
                       <td key={t} className="p-3">
                         {record ? (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => setPicturesFor(record)}
-                              className="rounded-md px-2 py-1 font-mono-tabular font-mono text-[13.5px] hover:bg-accent/60"
-                              title="See pictures"
-                            >
-                              {formatRON(record.invoiceAmountRON)}
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => setPicturesFor(record)}
+                            className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-accent/60"
+                            title="See pictures"
+                          >
+                            <div className="text-left">
+                              <div className="font-mono-tabular font-mono text-[13.5px] font-semibold">
+                                {formatRON(record.invoiceAmountRON)}
+                              </div>
+                              <div className="font-mono text-[10px] text-muted-foreground">
+                                {record.previousReading} → {record.currentReading} · {record.consumption} {UTILITY_UNIT[t]}
+                              </div>
+                            </div>
+                            <CameraIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          </button>
                         ) : (
                           <button
                             onClick={() => setActiveCell({ apartmentId: a.id, apartmentName: a.name, utilityType: t })}
-                            className="rounded-md border border-dashed border-border px-2.5 py-1 text-[12.5px] text-muted-foreground hover:border-primary hover:text-primary"
+                            className="flex h-11 w-full items-center justify-center rounded-[10px] border border-dashed border-border text-[12.5px] text-muted-foreground hover:border-primary hover:text-primary"
                           >
-                            + Add
+                            + Log reading
                           </button>
                         )}
                       </td>
