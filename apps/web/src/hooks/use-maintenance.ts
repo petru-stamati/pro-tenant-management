@@ -20,6 +20,7 @@ export interface MaintenanceRequestSummary {
   status: MaintenanceStatus;
   createdAt: string;
   apartment?: { id: string; ownerId: string; name: string };
+  proposals?: MaintenanceProposal[];
   // Only populated when the list is filtered by apartmentId — feeds the
   // apartment's Activity timeline without an extra per-request fetch.
   statusEvents?: MaintenanceStatusEvent[];
