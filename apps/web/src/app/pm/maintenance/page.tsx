@@ -43,7 +43,7 @@ const BOARD_COLUMNS: MaintenanceStatus[] = [
 ];
 
 const COLUMN_SLASH: Record<string, string> = {
-  REPORTED: "bg-[#6b7169]",
+  REPORTED: "bg-muted-foreground",
   TRIAGED: "bg-info",
   PROPOSAL_CREATED: "bg-warning",
   PENDING_OWNER_APPROVAL: "bg-warning",
@@ -158,7 +158,7 @@ export default function MaintenancePage() {
             {BOARD_COLUMNS.map((status) => {
               const items = byStatus.get(status) ?? [];
               return (
-                <div key={status} className="flex min-w-0 flex-col gap-2 rounded-[14px] bg-[#eef0ec] p-2.5">
+                <div key={status} className="flex min-w-0 flex-col gap-2 rounded-[14px] bg-muted p-2.5">
                   <div className="flex items-center gap-2 px-1 py-1">
                     <Slash className={COLUMN_SLASH[status]} />
                     <span className="text-[12px] font-semibold">{STATUS_LABEL[status]}</span>

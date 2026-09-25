@@ -34,7 +34,7 @@ function KpiCell({ label, children, onClick, tint }: { label: string; children: 
   return (
     <Comp
       onClick={onClick}
-      className={`flex flex-col gap-1.5 px-5 py-4 text-left ${tint ? "bg-[#fdf8f7]" : ""} ${onClick ? "cursor-pointer transition-colors hover:bg-accent/40" : ""}`}
+      className={`flex flex-col gap-1.5 px-5 py-4 text-left ${tint ? "bg-danger-soft" : ""} ${onClick ? "cursor-pointer transition-colors hover:bg-accent/40" : ""}`}
     >
       <span className="text-[10.5px] font-semibold tracking-[1.2px] text-muted-foreground uppercase">{label}</span>
       {children}
@@ -77,7 +77,7 @@ export default function PmDashboardPage() {
       {outstandingDrilldown && <OutstandingDrilldownDialog basePath="/pm" onClose={() => setOutstandingDrilldown(false)} />}
       {reviewInvoices && <ReviewInvoicesDialog onClose={() => setReviewInvoices(false)} />}
 
-      <div className="mb-6 grid grid-cols-1 divide-y divide-[#eef0ec] overflow-hidden rounded-[16px] border border-border bg-card shadow-sm sm:grid-cols-3 sm:divide-x sm:divide-y-0 lg:grid-cols-5">
+      <div className="mb-6 grid grid-cols-1 divide-y divide-divider overflow-hidden rounded-[16px] border border-border bg-card shadow-sm sm:grid-cols-3 sm:divide-x sm:divide-y-0 lg:grid-cols-5">
         <KpiCell label="Monthly revenue">
           <span className="font-mono-tabular font-mono text-[28px] font-semibold tracking-[-0.8px]">
             {summaryLoading ? "…" : `€${(summary?.monthlyRevenueEUR ?? 0).toLocaleString()}`}
@@ -97,7 +97,7 @@ export default function PmDashboardPage() {
                   key={i}
                   width={3}
                   height={12}
-                  className={i < summary.occupiedApartments ? "bg-primary" : i < summary.occupiedApartments + summary.vacantApartments ? "bg-[#d6d9d3]" : "bg-[#c97a2b]"}
+                  className={i < summary.occupiedApartments ? "bg-primary" : i < summary.occupiedApartments + summary.vacantApartments ? "bg-muted-foreground/30" : "bg-warning"}
                 />
               ))}
             </div>
@@ -129,7 +129,7 @@ export default function PmDashboardPage() {
             {summaryLoading ? "…" : (summary?.openMaintenanceCount ?? 0)}
           </span>
           {maintenanceApartments > 0 && (
-            <span className="text-[11px] text-[#c97a2b]">{maintenanceApartments} under maintenance</span>
+            <span className="text-[11px] text-warning">{maintenanceApartments} under maintenance</span>
           )}
         </KpiCell>
       </div>
@@ -206,7 +206,7 @@ export default function PmDashboardPage() {
             <TableBody>
               {expirations.map((lease) => {
                 const days = daysUntil(lease.endDate);
-                const barColor = days < 30 ? "bg-destructive" : days < 90 ? "bg-[#c97a2b]" : "bg-primary";
+                const barColor = days < 30 ? "bg-destructive" : days < 90 ? "bg-warning" : "bg-primary";
                 return (
                   <TableRow key={lease.id}>
                     <TableCell>{lease.apartment.name}</TableCell>

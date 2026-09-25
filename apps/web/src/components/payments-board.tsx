@@ -207,7 +207,7 @@ export function PaymentsBoard({
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-1 bg-[#fdf8f7] px-4 py-3.5">
+        <div className="flex flex-col gap-1 bg-danger-soft px-4 py-3.5">
           <span className="text-[10.5px] font-semibold tracking-[1.2px] text-muted-foreground uppercase">Outstanding, all months</span>
           <span className="font-mono-tabular font-mono text-[19px] font-semibold text-destructive">{formatRON(kpis.outstandingAllMonths)}</span>
           <span className="text-[11px] text-muted-foreground">
@@ -277,7 +277,7 @@ export function PaymentsBoard({
                             <button
                               key={inv.id}
                               onClick={() => setDetailInvoice(inv)}
-                              className="rounded-[10px] border border-border bg-[#fbfbfa] px-2.5 py-1.5 text-left text-[12px] hover:border-primary"
+                              className="rounded-[10px] border border-border bg-background px-2.5 py-1.5 text-left text-[12px] hover:border-primary"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span className="font-medium">{TYPE_LABEL[inv.type]}</span>
