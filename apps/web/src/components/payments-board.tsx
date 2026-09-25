@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ChevronLeftIcon, ChevronRightIcon, UploadIcon } from "lucide-react";
 import {
   useApartmentInvoices,
   useCreateApartmentInvoice,
@@ -23,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusChip, paymentStatusTone } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
 import { formatRON, dateFormatter } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export const TYPE_LABEL: Record<ApartmentInvoiceType, string> = {
   RENT: "Rent",
@@ -44,6 +46,34 @@ function shiftMonth(month: string, delta: number) {
   const [y, m] = month.split("-").map(Number);
   const d = new Date(y, m - 1 + delta, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function FilterPill({
+  active,
+  onClick,
+  destructive,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  destructive?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3.5 py-1.5 text-[12.5px] font-medium transition-colors",
+        active
+          ? destructive
+            ? "border-destructive bg-destructive/10 text-destructive"
+            : "border-foreground bg-foreground text-background"
+          : "border-border bg-card hover:bg-muted",
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function PaymentsBoard({
@@ -89,13 +119,63 @@ export function PaymentsBoard({
 
   const ownerName = (ownerId: string | undefined) => owners?.data.find((o) => o.id === ownerId)?.companyName ?? "—";
   const isLoading = apartmentsLoading || invoicesLoading;
+  const now = Date.now();
+
+  const [rowFilter, setRowFilter] = useState<"ALL" | "OUTSTANDING" | "OVERDUE" | "NO_INVOICE">("ALL");
+
+  const kpis = useMemo(() => {
+    const invoicedTotal = (invoices?.data ?? []).reduce((sum, inv) => sum + Number(inv.totalAmountRON), 0);
+    const collectedTotal = (invoices?.data ?? []).reduce((sum, inv) => sum + Number(inv.paidAmountRON), 0);
+    const outstandingAllMonths = (outstandingInvoices?.data ?? []).reduce((sum, inv) => sum + Number(inv.outstandingAmountRON), 0);
+    const overdueCount = (outstandingInvoices?.data ?? []).filter((inv) => new Date(inv.dueDate).getTime() < now).length;
+    const notYetDueCount = (outstandingInvoices?.data.length ?? 0) - overdueCount;
+    const standingCredit = (apartments?.data ?? []).reduce((sum, a) => sum + Number(a.creditBalanceRON), 0);
+    return {
+      invoicedTotal,
+      invoicedCount: invoices?.data.length ?? 0,
+      collectedTotal,
+      outstandingAllMonths,
+      overdueCount,
+      notYetDueCount,
+      standingCredit,
+    };
+  }, [invoices, outstandingInvoices, apartments, now]);
+
+  const rows = useMemo(() => {
+    const all = apartments?.data ?? [];
+    return all.filter((a) => {
+      const apartmentInvoices = invoicesByApartment.get(a.id) ?? [];
+      const apartmentOutstanding = outstandingByApartment.get(a.id) ?? [];
+      if (rowFilter === "ALL") return true;
+      if (rowFilter === "NO_INVOICE") return apartmentInvoices.length === 0;
+      if (rowFilter === "OUTSTANDING") return apartmentOutstanding.length > 0;
+      if (rowFilter === "OVERDUE") return apartmentOutstanding.some((inv) => new Date(inv.dueDate).getTime() < now);
+      return true;
+    });
+  }, [apartments, invoicesByApartment, outstandingByApartment, rowFilter, now]);
 
   return (
     <div className="mx-auto max-w-[1200px]">
+      <div className="mb-1 font-mono text-[12px] font-medium tracking-[1px] text-muted-foreground uppercase">
+        {apartments?.data.length ?? 0} apartments · all amounts VAT incl.
+      </div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[23px] font-semibold">Payments</h1>
-          <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} apartments</p>
+        <div className="flex items-center gap-2">
+          <h1 className="font-heading text-[23px] font-semibold">Payments</h1>
+          <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
+            <button onClick={() => setMonth((m) => shiftMonth(m, -1))} className="rounded-md p-1.5 hover:bg-muted">
+              <ChevronLeftIcon className="h-4 w-4" />
+            </button>
+            <div className="min-w-[140px] px-2 text-center text-[13px] font-medium">{monthLabel(month)}</div>
+            <button onClick={() => setMonth((m) => shiftMonth(m, 1))} className="rounded-md p-1.5 hover:bg-muted">
+              <ChevronRightIcon className="h-4 w-4" />
+            </button>
+          </div>
+          {month !== currentMonth() && (
+            <Button variant="outline" size="sm" onClick={() => setMonth(currentMonth())}>
+              Today
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {role === "OWNER" && (
@@ -112,36 +192,64 @@ export function PaymentsBoard({
         </div>
       </div>
 
-      <div className="mb-4 flex items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, -1))}>
-          ← Prev
-        </Button>
-        <div className="min-w-[160px] text-center text-[15px] font-semibold">{monthLabel(month)}</div>
-        <Button variant="outline" size="sm" onClick={() => setMonth((m) => shiftMonth(m, 1))}>
-          Next →
-        </Button>
-        {month !== currentMonth() && (
-          <Button variant="outline" size="sm" onClick={() => setMonth(currentMonth())}>
-            Today
-          </Button>
-        )}
+      <div className="mb-4 grid grid-cols-2 divide-x divide-divider overflow-hidden rounded-[16px] border border-border bg-card shadow-sm sm:grid-cols-4">
+        <div className="flex flex-col gap-1 px-4 py-3.5">
+          <span className="text-[10.5px] font-semibold tracking-[1.2px] text-muted-foreground uppercase">Invoiced</span>
+          <span className="font-mono-tabular font-mono text-[19px] font-semibold">{formatRON(kpis.invoicedTotal)}</span>
+          <span className="text-[11px] text-muted-foreground">{kpis.invoicedCount} invoices</span>
+        </div>
+        <div className="flex flex-col gap-1 px-4 py-3.5">
+          <span className="text-[10.5px] font-semibold tracking-[1.2px] text-muted-foreground uppercase">Collected</span>
+          <span className="font-mono-tabular font-mono text-[19px] font-semibold">{formatRON(kpis.collectedTotal)}</span>
+          {kpis.invoicedTotal > 0 && (
+            <div className="h-1 rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (kpis.collectedTotal / kpis.invoicedTotal) * 100)}%` }} />
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1 bg-[#fdf8f7] px-4 py-3.5">
+          <span className="text-[10.5px] font-semibold tracking-[1.2px] text-muted-foreground uppercase">Outstanding, all months</span>
+          <span className="font-mono-tabular font-mono text-[19px] font-semibold text-destructive">{formatRON(kpis.outstandingAllMonths)}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {kpis.overdueCount} overdue · {kpis.notYetDueCount} not yet due
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 px-4 py-3.5">
+          <span className="text-[10.5px] font-semibold tracking-[1.2px] text-muted-foreground uppercase">Standing credit</span>
+          <span className="font-mono-tabular font-mono text-[19px] font-semibold text-primary">{formatRON(kpis.standingCredit)}</span>
+        </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <FilterPill active={rowFilter === "ALL"} onClick={() => setRowFilter("ALL")}>
+          All
+        </FilterPill>
+        <FilterPill active={rowFilter === "OUTSTANDING"} onClick={() => setRowFilter("OUTSTANDING")}>
+          Outstanding
+        </FilterPill>
+        <FilterPill active={rowFilter === "OVERDUE"} onClick={() => setRowFilter("OVERDUE")} destructive>
+          Overdue
+        </FilterPill>
+        <FilterPill active={rowFilter === "NO_INVOICE"} onClick={() => setRowFilter("NO_INVOICE")}>
+          No invoice yet
+        </FilterPill>
       </div>
 
       <div className="overflow-x-auto rounded-[14px] border border-border bg-card shadow-sm">
         {isLoading ? (
           <p className="p-5 text-sm text-muted-foreground">Loading…</p>
-        ) : apartments && apartments.data.length > 0 ? (
+        ) : rows.length > 0 ? (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                <th className="p-3 font-medium text-muted-foreground">Tenant</th>
-                <th className="p-3 font-medium text-muted-foreground">Invoices this month</th>
-                <th className="p-3 font-medium text-muted-foreground">Outstanding</th>
-                <th className="p-3 font-medium text-muted-foreground">Actions</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Tenant</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Invoices this month</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Outstanding</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {apartments.data.map((a) => {
+              {rows.map((a) => {
                 const apartmentInvoices = invoicesByApartment.get(a.id) ?? [];
                 const apartmentOutstanding = outstandingByApartment.get(a.id) ?? [];
                 const outstandingTotal = apartmentOutstanding.reduce((sum, inv) => sum + Number(inv.outstandingAmountRON), 0);
@@ -153,7 +261,7 @@ export function PaymentsBoard({
                   }, new Map<string, number>());
                 const outstandingBreakdown = [...outstandingByMonth.entries()].sort(([a], [b]) => a.localeCompare(b));
                 return (
-                  <tr key={a.id} className="border-b border-border last:border-0 align-top">
+                  <tr key={a.id} className="border-b border-divider last:border-0 align-top">
                     <td className="p-3">
                       <div className="font-medium">
                         {a.currentLease?.tenant ? `${a.currentLease.tenant.firstName} ${a.currentLease.tenant.lastName}` : a.name}
@@ -169,7 +277,7 @@ export function PaymentsBoard({
                             <button
                               key={inv.id}
                               onClick={() => setDetailInvoice(inv)}
-                              className="rounded-md border border-border px-2.5 py-1.5 text-left text-[12px] hover:border-primary"
+                              className="rounded-[10px] border border-border bg-[#fbfbfa] px-2.5 py-1.5 text-left text-[12px] hover:border-primary"
                             >
                               <div className="flex items-center gap-1.5">
                                 <span className="font-medium">{TYPE_LABEL[inv.type]}</span>
@@ -177,27 +285,30 @@ export function PaymentsBoard({
                                   {inv.status.replace("_", " ").toLowerCase()}
                                 </StatusChip>
                               </div>
-                              <div className="font-mono-tabular font-mono">
-                                {formatRON(inv.totalAmountRON)} <span className="text-[10px] text-muted-foreground">VAT incl.</span>
-                              </div>
-                              <div className="text-[10.5px] text-muted-foreground">
+                              <div className="font-mono-tabular font-mono font-semibold">{formatRON(inv.totalAmountRON)}</div>
+                              <div className="font-mono text-[10.5px] text-muted-foreground">
                                 due {dateFormatter.format(new Date(inv.dueDate))}
                               </div>
                             </button>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-[12.5px] text-muted-foreground">—</span>
+                        <button
+                          onClick={() => setUploadFor({ id: a.id, name: a.name })}
+                          className="rounded-[10px] border border-dashed border-border px-2.5 py-1.5 text-[12px] text-muted-foreground hover:border-primary hover:text-primary"
+                        >
+                          No invoice yet · Upload
+                        </button>
                       )}
                     </td>
                     <td className="p-3">
                       {outstandingTotal > 0 ? (
                         <div>
-                          <div className="font-mono-tabular font-mono">{formatRON(outstandingTotal)}</div>
+                          <div className="font-mono-tabular font-mono text-destructive">{formatRON(outstandingTotal)}</div>
                           {outstandingBreakdown.length > 1 && (
                             <div className="mt-0.5 flex flex-col gap-0.5">
                               {outstandingBreakdown.map(([m, amt]) => (
-                                <span key={m} className="text-[10.5px] text-muted-foreground">
+                                <span key={m} className="font-mono text-[10.5px] text-muted-foreground">
                                   {monthLabel(m)}: {formatRON(amt)}
                                 </span>
                               ))}
@@ -209,13 +320,17 @@ export function PaymentsBoard({
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="flex flex-col gap-1.5">
-                        <Button variant="outline" size="sm" onClick={() => setUploadFor({ id: a.id, name: a.name })}>
-                          Upload invoice
-                        </Button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setUploadFor({ id: a.id, name: a.name })}
+                          title="Upload invoice"
+                          className="rounded-md border border-border p-1.5 text-muted-foreground hover:border-primary hover:text-foreground"
+                        >
+                          <UploadIcon className="h-4 w-4" />
+                        </button>
                         {canRecordPayments && (
-                          <Button size="sm" onClick={() => setPaymentFor({ id: a.id, name: a.name })}>
-                            Record payment
+                          <Button size="sm" className="bg-foreground text-background hover:bg-foreground/85" onClick={() => setPaymentFor({ id: a.id, name: a.name })}>
+                            Record
                           </Button>
                         )}
                       </div>
@@ -226,7 +341,7 @@ export function PaymentsBoard({
             </tbody>
           </table>
         ) : (
-          <p className="p-5 text-sm text-muted-foreground">No apartments yet.</p>
+          <p className="p-5 text-sm text-muted-foreground">No apartments match this filter.</p>
         )}
       </div>
 
@@ -747,6 +862,26 @@ function RecordPaymentDialog({
   const total = autoApply ? Number(autoApplyAmount || 0) : manualTotal;
   const willCreateCredit = autoApply && Number(autoApplyAmount || 0) > totalOutstanding;
 
+  // Client-side-only simulation of what auto-apply would do with the amount
+  // typed so far — oldest invoice first — so the PM can see where the money
+  // is headed before submitting. Doesn't affect what's actually sent.
+  const autoApplyPreview = useMemo(() => {
+    if (!autoApply) return [];
+    let remaining = Number(autoApplyAmount || 0);
+    const lines: { invoice: ApartmentInvoice; allocated: number; tag: "PAID IN FULL" | "PARTIAL" | "UNTOUCHED" }[] = [];
+    for (const inv of outstandingInvoices) {
+      const owed = Number(inv.outstandingAmountRON);
+      if (remaining <= 0) {
+        lines.push({ invoice: inv, allocated: 0, tag: "UNTOUCHED" });
+        continue;
+      }
+      const allocated = Math.min(remaining, owed);
+      remaining -= allocated;
+      lines.push({ invoice: inv, allocated, tag: allocated >= owed ? "PAID IN FULL" : "PARTIAL" });
+    }
+    return lines;
+  }, [autoApply, autoApplyAmount, outstandingInvoices]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -807,21 +942,24 @@ function RecordPaymentDialog({
             </div>
             <div className="flex flex-col gap-2">
               <Label>How was it paid?</Label>
-              <Select
-                value={paymentMethod}
-                onValueChange={(v) => {
-                  setPaymentMethod((v as PaymentMethod) ?? "BANK_TRANSFER");
-                  setFile(null);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BANK_TRANSFER">Bank transfer</SelectItem>
-                  <SelectItem value="CASH">Cash — collected by me</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex rounded-[10px] border border-border p-0.5">
+                {(["BANK_TRANSFER", "CASH"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod(m);
+                      setFile(null);
+                    }}
+                    className={cn(
+                      "h-8 flex-1 rounded-[8px] text-[12.5px] font-medium transition-colors",
+                      paymentMethod === m ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    {m === "BANK_TRANSFER" ? "Bank transfer" : "Cash"}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -857,6 +995,7 @@ function RecordPaymentDialog({
                 required
                 value={autoApplyAmount}
                 onChange={(e) => setAutoApplyAmount(e.target.value)}
+                className="h-[52px] font-mono-tabular font-mono text-[22px] focus-visible:ring-primary/12 focus-visible:ring-4"
               />
               {isLoading ? (
                 <p className="text-[12.5px] text-muted-foreground">Loading outstanding invoices…</p>
@@ -868,6 +1007,33 @@ function RecordPaymentDialog({
               ) : (
                 <p className="text-[12.5px] text-muted-foreground">No outstanding invoices — the full amount will be saved as credit.</p>
               )}
+
+              {Number(autoApplyAmount || 0) > 0 && autoApplyPreview.length > 0 && (
+                <div className="flex flex-col gap-1.5 rounded-md border border-border p-2.5">
+                  <Label className="text-[11px] text-muted-foreground">Where it goes</Label>
+                  {autoApplyPreview.map(({ invoice, allocated, tag }) => (
+                    <div key={invoice.id} className="flex items-center justify-between text-[12.5px]">
+                      <span className="text-muted-foreground">
+                        {TYPE_LABEL[invoice.type]} · {monthLabel(invoice.periodMonth.slice(0, 7))}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono-tabular font-mono">{formatRON(allocated)}</span>
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[9.5px] font-semibold tracking-wide uppercase",
+                            tag === "PAID IN FULL" && "bg-accent text-accent-foreground",
+                            tag === "PARTIAL" && "bg-warning-soft text-warning-ink",
+                            tag === "UNTOUCHED" && "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {tag}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {willCreateCredit && (
                 <p className="rounded-md bg-accent/40 px-3 py-2 text-[12.5px] text-muted-foreground">
                   {formatRON(Number(autoApplyAmount) - totalOutstanding)} more than what's outstanding — the difference will
@@ -938,7 +1104,7 @@ function RecordPaymentDialog({
 
           <div className="flex items-center justify-between rounded-md bg-accent/40 px-3 py-2">
             <span className="text-[13px] text-muted-foreground">Total payment</span>
-            <span className="font-mono-tabular font-mono text-[15px] font-semibold">{formatRON(total)}</span>
+            <span className="font-mono-tabular font-mono text-[18px] font-semibold">{formatRON(total)}</span>
           </div>
 
           {error && <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
