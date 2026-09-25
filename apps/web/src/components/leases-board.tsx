@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { FileTextIcon, MoreHorizontalIcon } from "lucide-react";
 import {
   useLeases,
   useCreateLease,
@@ -20,13 +21,25 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
 import { ApiError } from "@/lib/api-client";
 import { formatEUR, dateFormatter } from "@/lib/format";
 import { withVat, withoutVat } from "@/lib/vat";
 import { leaseTermStatus } from "@/lib/lease-status";
+import { cn } from "@/lib/utils";
 
 const STATUS_TONE = { DRAFT: "open", ACTIVE: "paid", ENDED: "progress", TERMINATED: "unpaid" } as const;
+
+function daysLeft(endDate: string): number {
+  const end = new Date(endDate);
+  const now = new Date();
+  return Math.round(
+    (new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime() -
+      new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
+      86_400_000,
+  );
+}
 
 function monthsBetween(start: string, end: string): number {
   if (!start || !end) return 12;
@@ -41,11 +54,14 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") || parts[0] };
 }
 
+type LeaseFilter = "ALL" | "ACTIVE" | "ENDING_SOON" | "VACANT";
+
 export function LeasesBoard({ canManage }: { canManage: boolean }) {
   const { data: apartments, isLoading: apartmentsLoading } = useApartments();
   const { data: owners } = useOwners();
   const { data: activeLeases, isLoading: leasesLoading } = useLeases({ status: "ACTIVE" });
   const [documentsFor, setDocumentsFor] = useState<LeaseWithApartment | null>(null);
+  const [filter, setFilter] = useState<LeaseFilter>("ALL");
 
   const leaseByApartmentId = useMemo(() => {
     const map = new Map<string, LeaseWithApartment>();
@@ -58,40 +74,87 @@ export function LeasesBoard({ canManage }: { canManage: boolean }) {
     [apartments],
   );
 
+  const counts = useMemo(() => {
+    const active = activeLeases?.data.length ?? 0;
+    const endingSoon = (activeLeases?.data ?? []).filter((l) => daysLeft(l.endDate) <= 90 && daysLeft(l.endDate) >= 0).length;
+    return { active, endingSoon, vacant: vacantApartments.length };
+  }, [activeLeases, vacantApartments]);
+
+  const rows = useMemo(() => {
+    const all = apartments?.data ?? [];
+    return all.filter((a) => {
+      const lease = leaseByApartmentId.get(a.id);
+      if (filter === "ALL") return true;
+      if (filter === "VACANT") return !lease;
+      if (filter === "ACTIVE") return !!lease;
+      if (filter === "ENDING_SOON") return !!lease && daysLeft(lease.endDate) <= 90 && daysLeft(lease.endDate) >= 0;
+      return true;
+    });
+  }, [apartments, leaseByApartmentId, filter]);
+
   const ownerName = (ownerId: string | undefined) => owners?.data.find((o) => o.id === ownerId)?.companyName ?? "—";
   const isLoading = apartmentsLoading || leasesLoading;
 
   return (
     <div className="mx-auto max-w-[1200px]">
+      <div className="mb-1 font-mono text-[12px] font-medium tracking-[1px] text-muted-foreground uppercase">
+        {counts.active} active · {counts.endingSoon} ending within 90 days · {counts.vacant} vacant
+      </div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-[23px] font-semibold">Leases</h1>
-          <p className="text-[13.5px] text-muted-foreground">{apartments?.data.length ?? 0} units</p>
-        </div>
-        <AddLeaseDialog vacantApartments={vacantApartments} />
+        <h1 className="font-heading text-[23px] font-semibold">Leases</h1>
+        {canManage && <AddLeaseDialog vacantApartments={vacantApartments} />}
+      </div>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <FilterButton active={filter === "ALL"} onClick={() => setFilter("ALL")}>
+          All units
+        </FilterButton>
+        <FilterButton active={filter === "ACTIVE"} onClick={() => setFilter("ACTIVE")}>
+          Active
+        </FilterButton>
+        <FilterButton active={filter === "ENDING_SOON"} onClick={() => setFilter("ENDING_SOON")}>
+          Ending soon
+        </FilterButton>
+        <FilterButton active={filter === "VACANT"} onClick={() => setFilter("VACANT")}>
+          Vacant
+        </FilterButton>
       </div>
 
       <div className="overflow-x-auto rounded-[14px] border border-border bg-card shadow-sm">
         {isLoading ? (
           <p className="p-5 text-sm text-muted-foreground">Loading…</p>
-        ) : apartments && apartments.data.length > 0 ? (
+        ) : rows.length > 0 ? (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                <th className="p-3 font-medium text-muted-foreground">Apartment</th>
-                <th className="p-3 font-medium text-muted-foreground">Tenant</th>
-                <th className="p-3 font-medium text-muted-foreground">Term</th>
-                <th className="p-3 font-medium text-muted-foreground">Rent</th>
-                <th className="p-3 font-medium text-muted-foreground">Deposit</th>
-                <th className="p-3 font-medium text-muted-foreground">Status</th>
-                <th className="p-3 font-medium text-muted-foreground">Actions</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Apartment</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Tenant</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Term</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Rent</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Deposit</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Status</th>
+                <th className="p-3 text-[10.5px] font-semibold tracking-[1px] text-muted-foreground uppercase">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {apartments.data.map((a) => {
+              {rows.map((a) => {
                 const lease = leaseByApartmentId.get(a.id);
+                const left = lease ? daysLeft(lease.endDate) : null;
+                const total = lease ? lease.termMonths ?? monthsBetween(lease.startDate, lease.endDate) : 0;
+                const elapsedPct = lease
+                  ? Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        ((Date.now() - new Date(lease.startDate).getTime()) /
+                          (new Date(lease.endDate).getTime() - new Date(lease.startDate).getTime())) *
+                          100,
+                      ),
+                    )
+                  : 0;
+                const barColor = left === null ? "bg-muted" : left < 30 ? "bg-destructive" : left < 90 ? "bg-warning" : "bg-primary";
                 return (
-                  <tr key={a.id} className="border-b border-border last:border-0 align-top">
+                  <tr key={a.id} className="border-b border-divider last:border-0 align-top">
                     <td className="p-3">
                       <div className="font-medium">{a.name}</div>
                       <div className="text-[11.5px] text-muted-foreground">{ownerName(a.ownerId)}</div>
@@ -99,16 +162,20 @@ export function LeasesBoard({ canManage }: { canManage: boolean }) {
                     <td className="p-3">
                       {lease?.tenant ? `${lease.tenant.firstName} ${lease.tenant.lastName}` : "—"}
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 min-w-[180px]">
                       {lease ? (
-                        <>
-                          <div className="font-mono-tabular font-mono text-[12.5px]">
-                            {dateFormatter.format(new Date(lease.startDate))} → {dateFormatter.format(new Date(lease.endDate))}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between font-mono text-[10.5px] text-muted-foreground">
+                            <span>{dateFormatter.format(new Date(lease.startDate))}</span>
+                            <span className="font-medium text-foreground">
+                              {left !== null && left >= 0 ? `${left}d left` : `${total} mo`}
+                            </span>
+                            <span>{dateFormatter.format(new Date(lease.endDate))}</span>
                           </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {lease.termMonths ?? monthsBetween(lease.startDate, lease.endDate)} months
+                          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div className={cn("h-full rounded-full", barColor)} style={{ width: `${elapsedPct}%` }} />
                           </div>
-                        </>
+                        </div>
                       ) : (
                         "—"
                       )}
@@ -146,13 +213,18 @@ export function LeasesBoard({ canManage }: { canManage: boolean }) {
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1">
                         {lease && (
-                          <Button variant="outline" size="sm" onClick={() => setDocumentsFor(lease)}>
-                            View rental agreement
-                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => setDocumentsFor(lease)}
+                            title="Rental agreement"
+                            className="rounded-md border border-border p-1.5 text-muted-foreground hover:border-primary hover:text-foreground"
+                          >
+                            <FileTextIcon className="h-4 w-4" />
+                          </button>
                         )}
-                        {canManage && lease && <LeaseActions lease={lease} />}
+                        {canManage && lease && <LeaseActionsMenu lease={lease} />}
                       </div>
                     </td>
                   </tr>
@@ -161,12 +233,26 @@ export function LeasesBoard({ canManage }: { canManage: boolean }) {
             </tbody>
           </table>
         ) : (
-          <p className="p-5 text-sm text-muted-foreground">No apartments yet.</p>
+          <p className="p-5 text-sm text-muted-foreground">No apartments match this filter.</p>
         )}
       </div>
 
       {documentsFor && <LeaseDocumentDialog lease={documentsFor} onClose={() => setDocumentsFor(null)} />}
     </div>
+  );
+}
+
+function FilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "rounded-full border px-3.5 py-1.5 text-[12.5px] font-medium transition-colors",
+        active ? "border-foreground bg-foreground text-background" : "border-border bg-card hover:bg-muted",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -234,7 +320,7 @@ function LeaseDocumentDialog({ lease, onClose }: { lease: LeaseWithApartment; on
   );
 }
 
-function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
+function LeaseActionsMenu({ lease }: { lease: LeaseWithApartment }) {
   const [mode, setMode] = useState<"edit" | "renew" | "terminate" | null>(null);
   const update = useUpdateLease(lease.id);
   const updateTenant = useUpdateTenant(lease.tenant?.id ?? "");
@@ -328,9 +414,30 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              title="More actions"
+              className="rounded-md border border-border p-1.5 text-muted-foreground hover:border-primary hover:text-foreground"
+            />
+          }
+        >
+          <MoreHorizontalIcon className="h-4 w-4" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setMode("edit")}>Edit</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setMode("renew")}>Renew</DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={() => setMode("terminate")}>
+            Terminate
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <Dialog open={mode === "edit"} onOpenChange={(v) => setMode(v ? "edit" : null)}>
-        <DialogTrigger render={<Button variant="outline" size="sm" />}>Edit</DialogTrigger>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Edit lease — {lease.apartment.name}</DialogTitle>
@@ -446,7 +553,6 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
           if (!v) setRenewalFile(null);
         }}
       >
-        <DialogTrigger render={<Button variant="outline" size="sm" />}>Renew</DialogTrigger>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Renew lease — {lease.apartment.name}</DialogTitle>
@@ -500,7 +606,6 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
       </Dialog>
 
       <Dialog open={mode === "terminate"} onOpenChange={(v) => setMode(v ? "terminate" : null)}>
-        <DialogTrigger render={<Button variant="destructive" size="sm" />}>Terminate</DialogTrigger>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Terminate lease — {lease.apartment.name}</DialogTitle>
@@ -519,7 +624,7 @@ function LeaseActions({ lease }: { lease: LeaseWithApartment }) {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 
