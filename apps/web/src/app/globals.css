@@ -46,6 +46,18 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Redesign tokens (design_handoff_protenant_redesign) not covered by the shadcn mapping above. */
+  --color-ink-2: var(--ink-2);
+  --color-faint: var(--faint);
+  --color-divider: var(--divider);
+  --color-warning: var(--status-amber);
+  --color-warning-ink: var(--status-amber-ink);
+  --color-warning-soft: var(--status-amber-soft);
+  --color-info: var(--status-blue);
+  --color-info-soft: var(--status-blue-soft);
+  --color-danger-soft: var(--status-danger-soft);
+  --color-danger-border: var(--status-danger-border);
 }
 
 /*
@@ -70,8 +82,8 @@
   --accent-foreground: #0f5c2a;
   --destructive: #b23b34;
   --destructive-foreground: #ffffff;
-  --border: #e4e7e2;
-  --input: #e4e7e2;
+  --border: #e7e9e4;
+  --input: #e7e9e4;
   --ring: #1c9b47;
   --chart-1: #1c9b47;
   --chart-2: #c97a2b;
@@ -90,9 +102,17 @@
 
   /* Semantic status tokens the mockup uses for chips/rent status — not the brand accent, kept distinct. */
   --status-amber: #c97a2b;
+  --status-amber-ink: #9a5a17;
   --status-amber-soft: #fbf0e3;
   --status-blue: #2461a8;
   --status-blue-soft: #e3eefb;
+  --status-danger-soft: #f8e6e4;
+  --status-danger-border: #efc9c5;
+
+  /* Text hierarchy + divider tokens from the redesign spec. */
+  --ink-2: #3d423b;
+  --faint: #9aa096;
+  --divider: #f0f1ee;
 }
 
 .dark {
@@ -130,9 +150,16 @@
   --sidebar-ring: #1c9b47;
 
   --status-amber: #c97a2b;
+  --status-amber-ink: #e3a765;
   --status-amber-soft: #2a2013;
   --status-blue: #5b9bd9;
   --status-blue-soft: #152433;
+  --status-danger-soft: #2a1614;
+  --status-danger-border: #3d1f1c;
+
+  --ink-2: #c3c7c0;
+  --faint: #7a8076;
+  --divider: #1f2420;
 }
 
 @layer base {
