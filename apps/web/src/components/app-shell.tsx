@@ -2,181 +2,493 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  LayoutDashboardIcon,
+  ListChecksIcon,
+  Building2Icon,
+  BriefcaseIcon,
+  UsersIcon,
+  FileSignatureIcon,
+  WalletIcon,
+  ZapIcon,
+  WrenchIcon,
+  FolderIcon,
+  HomeIcon,
+  ReceiptIcon,
+  ChevronsUpDownIcon,
+  SearchIcon,
+  LogOutIcon,
+  MenuIcon,
+  XIcon,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useScope, ScopeProvider } from "@/lib/scope-context";
 import { useLatestExchangeRate } from "@/hooks/use-exchange-rate";
 import { useOpenItems } from "@/hooks/use-open-items";
+import { useApartments } from "@/hooks/use-apartments";
+import { useOwners } from "@/hooks/use-owners";
+import { useTenants } from "@/hooks/use-tenants";
+import { Slash } from "@/components/ui/slash";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+
+type Role = "pm" | "owner" | "tenant";
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  badge?: number; // action count — green pill
+  count?: number; // plain total — mono text
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
 
 function ExchangeRateWidget() {
   const { data: rate, isLoading, isError } = useLatestExchangeRate();
-
   if (isLoading || isError || !rate) return null;
-
   return (
-    <div className="rounded-[9px] bg-sidebar-accent/40 px-3 py-2.5">
-      <div className="text-[10px] font-medium tracking-[1px] text-sidebar-foreground/50 uppercase">BNR rate</div>
+    <div className="rounded-[9px] bg-[#151916] px-3 py-2.5">
+      <div className="text-[10px] font-medium tracking-[1px] text-[#7a8076] uppercase">BNR rate</div>
       <div className="mt-0.5 flex items-baseline gap-1.5">
         <span className="font-mono-tabular font-mono text-[15px] font-semibold text-white">
           {Number(rate.rateRON).toFixed(4)}
         </span>
-        <span className="text-[11px] text-sidebar-foreground/70">RON/EUR</span>
+        <span className="text-[11px] text-[#7a8076]">RON/EUR</span>
       </div>
-      <div className="mt-0.5 text-[10.5px] text-sidebar-foreground/50">
+      <div className="mt-0.5 text-[10.5px] text-[#7a8076]">
         {new Date(rate.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
       </div>
     </div>
   );
 }
 
-export interface NavItem {
-  label: string;
-  href: string;
+function Logo({ compact }: { compact?: boolean }) {
+  const size = compact ? 24 : 34;
+  return (
+    <div className="flex items-center gap-2.5 px-1">
+      <div
+        className="relative shrink-0 overflow-hidden rounded-[9px] bg-primary"
+        style={{ width: size, height: size }}
+      >
+        <Slash width={6} height={size - 14} className="absolute left-[29%] top-[21%] bg-[#0a0d0b]" />
+        <Slash width={6} height={size - 14} className="absolute left-[53%] top-[21%] bg-white" />
+      </div>
+      <div className="leading-tight">
+        <div className="font-heading text-[15px] font-bold text-white">PRO Tenant</div>
+        <div className="text-[9.5px] font-medium tracking-[1.8px] text-primary">MANAGEMENT</div>
+      </div>
+    </div>
+  );
 }
 
-export interface NavSection {
-  title?: string;
-  items: NavItem[];
+/** The sidebar's "All owners / All my apartments / current lease" selector — filters PM/Owner pages by scope. */
+function ContextSwitcher({ role }: { role: Role }) {
+  const scope = useScope();
+  const [open, setOpen] = useState(false);
+  const { data: owners } = useOwners(undefined, { enabled: role === "pm" });
+  const { data: apartments } = useApartments(role === "pm" ? { ownerId: scope?.ownerId ?? undefined } : {});
+
+  if (role === "tenant") {
+    const apt = apartments?.data[0];
+    return (
+      <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-[#151916] px-3 py-2.5 shadow-[inset_0_0_0_1px_#232824]">
+        <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-[#1f2420]">
+          <HomeIcon className="h-[15px] w-[15px] text-[#4ade80]" />
+        </div>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="truncate text-[13px] font-semibold text-white">{apt?.name ?? "My apartment"}</div>
+          <div className="font-mono text-[11px] text-[#7a8076]">
+            {apt?.currentLease ? `Lease to ${new Date(apt.currentLease.endDate).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}` : "—"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!scope) return null;
+
+  const title =
+    role === "pm"
+      ? scope.ownerId
+        ? (owners?.data.find((o) => o.id === scope.ownerId)?.companyName ?? "All owners")
+        : "All owners"
+      : scope.apartmentId
+        ? (apartments?.data.find((a) => a.id === scope.apartmentId)?.name ?? "All my apartments")
+        : "All my apartments";
+
+  const subtitle =
+    role === "pm"
+      ? `${apartments?.meta.total ?? "…"} units · ${owners?.meta.total ?? "…"} owners`
+      : `${apartments?.meta.total ?? "…"} units`;
+
+  const options =
+    role === "pm"
+      ? [{ id: null, label: "All owners" }, ...(owners?.data.map((o) => ({ id: o.id, label: o.companyName })) ?? [])]
+      : [{ id: null, label: "All my apartments" }, ...(apartments?.data.map((a) => ({ id: a.id, label: a.name })) ?? [])];
+
+  return (
+    <div className="relative mb-2">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2.5 rounded-xl bg-[#151916] px-3 py-2.5 text-left shadow-[inset_0_0_0_1px_#232824] transition-colors hover:bg-[#1a1e1b]"
+      >
+        <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-[#1f2420]">
+          <Building2Icon className="h-[15px] w-[15px] text-[#4ade80]" />
+        </div>
+        <div className="min-w-0 flex-1 leading-tight">
+          <div className="truncate text-[13px] font-semibold text-white">{title}</div>
+          <div className="font-mono truncate text-[11px] text-[#7a8076]">{subtitle}</div>
+        </div>
+        <ChevronsUpDownIcon className="h-[15px] w-[15px] shrink-0 text-[#7a8076]" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 mt-1.5 max-h-[280px] w-full overflow-y-auto rounded-xl border border-[#232824] bg-[#151916] p-1.5 shadow-xl">
+            {options.map((opt) => (
+              <button
+                key={opt.id ?? "all"}
+                type="button"
+                onClick={() => {
+                  if (role === "pm") scope.setOwnerId(opt.id);
+                  else scope.setApartmentId(opt.id);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "block w-full truncate rounded-lg px-2.5 py-2 text-left text-[12.5px] text-[#cfd2cd] hover:bg-[#1f2420] hover:text-white",
+                  (role === "pm" ? scope.ownerId : scope.apartmentId) === opt.id && "bg-[#1f2420] text-white",
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
-/**
- * Shared shell for the PM/Owner/Tenant sections — same dark sidebar system
- * as the approved mockup, with each section supplying its own nav.
- */
-export function AppShell({
-  sections,
-  children,
-}: {
-  sections: NavSection[];
-  children: React.ReactNode;
-}) {
+function CommandPalette({ groups, open, onOpenChange }: { groups: NavGroup[]; open: boolean; onOpenChange: (o: boolean) => void }) {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  const filtered = query.trim()
+    ? flat.filter((i) => i.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : flat;
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="top-[18%] max-w-md translate-y-0 gap-0 p-0" showCloseButton={false}>
+        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
+          <SearchIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search pages…"
+            className="w-full bg-transparent text-[13.5px] outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+        <div className="max-h-[320px] overflow-y-auto p-1.5">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-4 text-center text-[13px] text-muted-foreground">No matches.</p>
+          ) : (
+            filtered.map((item) => (
+              <button
+                key={item.href}
+                type="button"
+                onClick={() => {
+                  router.push(item.href);
+                  onOpenChange(false);
+                }}
+                className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13.5px] hover:bg-accent"
+              >
+                <item.icon className="h-4 w-4 text-muted-foreground" />
+                {item.label}
+              </button>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function navConfig(role: Role, counts: { openTasks: number; openMaintenance: number; apartments: number; owners: number; tenants: number }): NavGroup[] {
+  if (role === "pm") {
+    return [
+      {
+        label: "OVERVIEW",
+        items: [
+          { label: "Dashboard", href: "/pm", icon: LayoutDashboardIcon },
+          { label: "Tasks", href: "/pm/tasks", icon: ListChecksIcon, badge: counts.openTasks },
+        ],
+      },
+      {
+        label: "PORTFOLIO",
+        items: [
+          { label: "Apartments", href: "/pm/apartments", icon: Building2Icon, count: counts.apartments },
+          { label: "Owners", href: "/pm/owners", icon: BriefcaseIcon, count: counts.owners },
+          { label: "Tenants", href: "/pm/tenants", icon: UsersIcon, count: counts.tenants },
+          { label: "Leases", href: "/pm/leases", icon: FileSignatureIcon },
+        ],
+      },
+      {
+        label: "MONEY",
+        items: [
+          { label: "Payments", href: "/pm/payments", icon: WalletIcon },
+          { label: "Utilities", href: "/pm/utilities", icon: ZapIcon },
+        ],
+      },
+      {
+        label: "OPERATIONS",
+        items: [
+          { label: "Maintenance", href: "/pm/maintenance", icon: WrenchIcon, badge: counts.openMaintenance },
+          { label: "Documents", href: "/pm/documents", icon: FolderIcon },
+        ],
+      },
+    ];
+  }
+  if (role === "owner") {
+    return [
+      {
+        label: "OVERVIEW",
+        items: [
+          { label: "Dashboard", href: "/owner", icon: LayoutDashboardIcon },
+          { label: "Tasks", href: "/owner/tasks", icon: ListChecksIcon, badge: counts.openTasks },
+        ],
+      },
+      {
+        label: "PORTFOLIO",
+        items: [
+          { label: "Apartments", href: "/owner/apartments", icon: Building2Icon, count: counts.apartments },
+          { label: "Leases", href: "/owner/leases", icon: FileSignatureIcon },
+        ],
+      },
+      {
+        label: "MONEY",
+        items: [
+          { label: "Payments", href: "/owner/payments", icon: WalletIcon },
+          { label: "Utilities", href: "/owner/utilities", icon: ZapIcon },
+        ],
+      },
+      {
+        label: "OPERATIONS",
+        items: [
+          { label: "Maintenance", href: "/owner/maintenance", icon: WrenchIcon, badge: counts.openMaintenance },
+          { label: "Documents", href: "/owner/documents", icon: FolderIcon },
+        ],
+      },
+    ];
+  }
+  return [
+    {
+      label: "MY HOME",
+      items: [
+        { label: "My Apartment", href: "/tenant", icon: HomeIcon },
+        { label: "Invoices & Payments", href: "/tenant/invoices", icon: ReceiptIcon },
+      ],
+    },
+    {
+      label: "SUPPORT",
+      items: [
+        { label: "Documents", href: "/tenant/documents", icon: FolderIcon },
+        { label: "Report an Issue", href: "/tenant/maintenance", icon: WrenchIcon },
+      ],
+    },
+  ];
+}
+
+function AppShellInner({ role, children }: { role: Role; children: React.ReactNode }) {
   const { user, status, logout } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [navOpen, setNavOpen] = useState(false);
-  const { openCount } = useOpenItems(user?.role === "OWNER" ? "OWNER" : "PM");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const { openItems } = useOpenItems(role === "owner" ? "OWNER" : "PM");
+  const scope = useScope();
+
+  const { data: apartments } = useApartments(
+    role === "pm" ? { ownerId: scope?.ownerId ?? undefined } : { enabled: role === "owner" },
+  );
+  const { data: owners } = useOwners(undefined, { enabled: role === "pm" });
+  const { data: tenants } = useTenants(undefined, { enabled: role === "pm" });
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
   }, [status, router]);
 
-  // Collapse the mobile drawer whenever the route changes (link click, back button, etc).
   useEffect(() => {
     setNavOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   if (status !== "authenticated" || !user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>
-    );
+    return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>;
   }
 
-  const brand = (
-    <div className="flex items-center gap-2.5 px-2 pb-5 pt-1.5">
-      <div className="relative h-[22px] w-[22px] shrink-0">
-        <span className="absolute left-0 h-[22px] w-2 -skew-x-12 rounded-sm bg-white/90" />
-        <span className="absolute left-[9px] h-[22px] w-2 -skew-x-12 rounded-sm bg-primary" />
+  const openTasks = openItems.filter((i) => i.kind === "task").length;
+  const openMaintenance = openItems.filter((i) => i.kind === "maintenance").length;
+  const groups = navConfig(role, {
+    openTasks,
+    openMaintenance,
+    apartments: apartments?.meta.total ?? 0,
+    owners: owners?.meta.total ?? 0,
+    tenants: tenants?.meta.total ?? 0,
+  });
+
+  const roleLabel = role === "pm" ? "Property manager" : role === "owner" ? "Owner" : "Tenant";
+  const initials = `${user.firstName[0] ?? ""}${user.lastName[0] ?? ""}`.toUpperCase();
+
+  const sidebarBody = (
+    <div className="relative flex h-full flex-col overflow-hidden px-4 pb-4 pt-6">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute right-[-30px] bottom-[-60px] bg-primary opacity-[.16]"
+        style={{ width: 70, height: 420, transform: "skewX(-16deg)" }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute right-[52px] bottom-[-60px] bg-white opacity-[.04]"
+        style={{ width: 70, height: 420, transform: "skewX(-16deg)" }}
+      />
+      <div className="relative mb-4 flex items-center justify-between">
+        <Logo />
+        <button
+          onClick={() => setNavOpen(false)}
+          aria-label="Close menu"
+          className="rounded-md p-1 text-[#7a8076] hover:text-white md:hidden"
+        >
+          <XIcon className="h-5 w-5" />
+        </button>
       </div>
-      <div className="leading-tight">
-        <div className="font-heading text-[15px] font-semibold text-white">PRO TENANT</div>
-        <div className="text-[10.5px] tracking-[1.5px] text-primary">MANAGEMENT</div>
+
+      <div className="relative">
+        <ContextSwitcher role={role} />
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          className="mb-1 flex h-[38px] w-full items-center gap-2.5 rounded-[10px] bg-[#151916] px-3 text-left text-[13px] text-[#7a8076] hover:bg-[#1a1e1b]"
+        >
+          <SearchIcon className="h-[15px] w-[15px]" />
+          <span className="flex-1">Search</span>
+          <span className="rounded-[5px] border border-[#262b26] px-[5px] font-mono text-[11px] font-medium">⌘K</span>
+        </button>
+      </div>
+
+      <nav className="relative flex flex-1 flex-col overflow-y-auto">
+        {groups.map((g) => (
+          <div key={g.label} className="flex flex-col gap-0.5">
+            <div className="px-3 pb-1.5 pt-4 text-[10px] font-semibold tracking-[1.4px] text-[#5b6159]">{g.label}</div>
+            {g.items.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(item.href + "/");
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "relative flex h-9 items-center gap-3 rounded-[10px] px-3 text-[13.5px] font-medium transition-colors",
+                    active ? "bg-gradient-to-r from-primary/22 to-primary/[.04] text-white font-semibold" : "text-[#a9aea6] hover:bg-[#151916] hover:text-white",
+                  )}
+                >
+                  {active && <Slash className="absolute -left-1" height={20} />}
+                  <Icon className={cn("h-4 w-4 shrink-0", active ? "text-[#4ade80]" : "text-[#6b7169]")} />
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {typeof item.badge === "number" && item.badge > 0 && (
+                    <span className="rounded-full bg-[#4ade80] px-[7px] py-px font-mono text-[11px] font-semibold text-[#0a0d0b]">
+                      {item.badge}
+                    </span>
+                  )}
+                  {typeof item.count === "number" && (
+                    <span className="font-mono text-[11px] text-[#5b6159]">{item.count}</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      <div className="relative mt-auto flex flex-col gap-2 pt-2">
+        <ExchangeRateWidget />
+        <div className="flex items-center gap-2.5 rounded-xl bg-[#151916] px-3 py-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary font-heading text-[12px] font-semibold text-white">
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-[13px] font-semibold text-white">
+              {user.firstName} {user.lastName}
+            </div>
+            <div className="truncate text-[11.5px] text-[#7a8076]">{roleLabel}</div>
+          </div>
+          <button
+            onClick={() => logout().then(() => router.push("/login"))}
+            aria-label="Sign out"
+            className="rounded-md p-1 text-[#6b7169] hover:text-white"
+          >
+            <LogOutIcon className="h-[15px] w-[15px]" />
+          </button>
+        </div>
       </div>
     </div>
   );
 
-  const nav = (
-    <nav className="flex flex-1 flex-col gap-0.5">
-      {sections.map((section, i) => (
-        <div key={i} className="flex flex-col gap-0.5">
-          {section.title && (
-            <div className="mb-1.5 mt-4 px-2 text-[10.5px] font-medium tracking-[1.2px] text-sidebar-foreground/50 uppercase">
-              {section.title}
-            </div>
-          )}
-          {section.items.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/");
-            const isTasksLink = item.href.endsWith("/tasks");
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center justify-between rounded-[9px] border-l-[3px] px-3 py-2.5 text-[13.5px] font-medium transition-colors",
-                  active
-                    ? "border-primary bg-sidebar-accent text-white"
-                    : "border-transparent text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-white",
-                )}
-              >
-                <span>{item.label}</span>
-                {isTasksLink && openCount > 0 && (
-                  <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10.5px] font-semibold leading-none text-primary-foreground">
-                    {openCount > 99 ? "99+" : openCount}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      ))}
-    </nav>
-  );
-
-  const signOut = (
-    <button
-      onClick={() => logout().then(() => router.push("/login"))}
-      className="rounded-[9px] px-3 py-2.5 text-left text-[13px] font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-white"
-    >
-      Sign out
-    </button>
-  );
-
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[236px_1fr]">
-      {/* Mobile top bar — hidden at md+ where the sidebar is always visible inline */}
+    <div className="min-h-screen md:grid md:grid-cols-[272px_1fr]">
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-sidebar-accent/40 bg-sidebar px-4 py-3 text-sidebar-foreground md:hidden">
-        <div className="flex items-center gap-2">
-          <div className="relative h-[18px] w-[18px] shrink-0">
-            <span className="absolute left-0 h-[18px] w-[7px] -skew-x-12 rounded-sm bg-white/90" />
-            <span className="absolute left-[7px] h-[18px] w-[7px] -skew-x-12 rounded-sm bg-primary" />
-          </div>
-          <span className="font-heading text-[14px] font-semibold text-white">PRO TENANT</span>
-        </div>
-        <button
-          onClick={() => setNavOpen(true)}
-          aria-label="Open menu"
-          className="rounded-md p-1.5 text-sidebar-foreground/85 hover:bg-sidebar-accent/60 hover:text-white"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 6h18M3 12h18M3 18h18" strokeLinecap="round" />
-          </svg>
+        <Logo compact />
+        <button onClick={() => setNavOpen(true)} aria-label="Open menu" className="rounded-md p-1.5 text-[#a9aea6] hover:text-white">
+          <MenuIcon className="h-5 w-5" />
         </button>
       </div>
 
-      {/* Backdrop for the mobile drawer */}
-      {navOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          onClick={() => setNavOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+      {navOpen && <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />}
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-[236px] -translate-x-full flex-col gap-0.5 overflow-y-auto bg-sidebar px-4 py-5 text-sidebar-foreground transition-transform duration-200 ease-out",
+          "fixed inset-y-0 left-0 z-50 w-[272px] -translate-x-full bg-[#0a0d0b] transition-transform duration-200 ease-out",
           "md:sticky md:top-0 md:h-screen md:translate-x-0",
           navOpen && "translate-x-0",
         )}
       >
-        {brand}
-        {nav}
-        <div className="mt-auto flex flex-col gap-2">
-          <ExchangeRateWidget />
-          {signOut}
-        </div>
+        {sidebarBody}
       </aside>
 
       <main className="overflow-auto p-4 sm:p-6 md:p-8">{children}</main>
+
+      <CommandPalette groups={groups} open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
+  );
+}
+
+export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
+  if (role === "tenant") return <AppShellInner role={role}>{children}</AppShellInner>;
+  return (
+    <ScopeProvider>
+      <AppShellInner role={role}>{children}</AppShellInner>
+    </ScopeProvider>
   );
 }

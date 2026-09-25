@@ -12,12 +12,13 @@ export interface Owner {
   address: string | null;
 }
 
-export function useOwners(search?: string) {
+export function useOwners(search?: string, options: { enabled?: boolean } = {}) {
   const query = new URLSearchParams({ pageSize: "100" });
   if (search) query.set("search", search);
   return useQuery({
     queryKey: ["owners", search],
     queryFn: () => apiFetch<Paginated<Owner>>(`/owners?${query.toString()}`),
+    enabled: options.enabled ?? true,
   });
 }
 

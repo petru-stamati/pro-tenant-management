@@ -22,16 +22,18 @@ export interface ApartmentSummary {
   coverDocumentId: string | null;
 }
 
-export function useApartments(params: { ownerId?: string; status?: string; search?: string } = {}) {
+export function useApartments(params: { ownerId?: string; status?: string; search?: string; enabled?: boolean } = {}) {
+  const { enabled = true, ...filters } = params;
   const query = new URLSearchParams();
-  if (params.ownerId) query.set("ownerId", params.ownerId);
-  if (params.status) query.set("status", params.status);
-  if (params.search) query.set("search", params.search);
+  if (filters.ownerId) query.set("ownerId", filters.ownerId);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.search) query.set("search", filters.search);
   query.set("pageSize", "50");
 
   return useQuery({
-    queryKey: ["apartments", params],
+    queryKey: ["apartments", filters],
     queryFn: () => apiFetch<Paginated<ApartmentSummary>>(`/apartments?${query.toString()}`),
+    enabled,
   });
 }
 

@@ -10,12 +10,13 @@ export interface Tenant {
   phone: string | null;
 }
 
-export function useTenants(search?: string) {
+export function useTenants(search?: string, options: { enabled?: boolean } = {}) {
   const query = new URLSearchParams({ pageSize: "100" });
   if (search) query.set("search", search);
   return useQuery({
     queryKey: ["tenants", search],
     queryFn: () => apiFetch<Paginated<Tenant>>(`/tenants?${query.toString()}`),
+    enabled: options.enabled ?? true,
   });
 }
 
