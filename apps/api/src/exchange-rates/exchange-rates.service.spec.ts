@@ -57,14 +57,10 @@ describe('ExchangeRatesService.fetchAndSaveFromBnr', () => {
 });
 
 describe('ExchangeRatesService.getLatest', () => {
-  it('returns the most recent rate on file', async () => {
-    const prisma = makePrisma();
-    prisma.client.exchangeRate.findFirst.mockResolvedValue({ date: new Date('2026-07-30'), rateRON: '5.2439' });
-    const service = new ExchangeRatesService(prisma as never);
-
-    const result = await service.getLatest();
-    expect(result).toMatchObject({ rateRON: '5.2439' });
-    expect(prisma.client.exchangeRate.findFirst).toHaveBeenCalledWith({ orderBy: { date: 'desc' } });
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
   });
 
   it('throws NotFoundException when nothing is on file yet', async () => {
@@ -73,5 +69,49 @@ describe('ExchangeRatesService.getLatest', () => {
     const service = new ExchangeRatesService(prisma as never);
 
     await expect(service.getLatest()).rejects.toThrow('No exchange rate on file yet');
+  });
+
+  it("returns the cached rate as-is when it's already from today", async () => {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Bucharest' });
+    const prisma = makePrisma();
+    prisma.client.exchangeRate.findFirst.mockResolvedValue({ date: new Date(today), rateRON: '5.2439' });
+    global.fetch = jest.fn();
+    const service = new ExchangeRatesService(prisma as never);
+
+    const result = await service.getLatest();
+    expect(result).toMatchObject({ rateRON: '5.2439' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('auto-refreshes from BNR when the cached rate is stale (not from today)', async () => {
+    const prisma = makePrisma();
+    prisma.client.exchangeRate.findFirst.mockResolvedValue({ date: new Date('2026-07-30'), rateRON: '5.2439' });
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, text: async () => SAMPLE_BNR_XML }) as never;
+    const service = new ExchangeRatesService(prisma as never);
+
+    const result = await service.getLatest();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ rateRON: 5.2439, source: 'BNR' });
+  });
+
+  it('falls back to the stale cached rate if the live refresh fails', async () => {
+    const prisma = makePrisma();
+    prisma.client.exchangeRate.findFirst.mockResolvedValue({ date: new Date('2026-07-30'), rateRON: '5.2439' });
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 503 }) as never;
+    const service = new ExchangeRatesService(prisma as never);
+
+    const result = await service.getLatest();
+    expect(result).toMatchObject({ rateRON: '5.2439' });
+  });
+
+  it('does not hammer the BNR feed on repeated stale reads within the cooldown', async () => {
+    const prisma = makePrisma();
+    prisma.client.exchangeRate.findFirst.mockResolvedValue({ date: new Date('2026-07-30'), rateRON: '5.2439' });
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, text: async () => SAMPLE_BNR_XML }) as never;
+    const service = new ExchangeRatesService(prisma as never);
+
+    await service.getLatest();
+    await service.getLatest();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
