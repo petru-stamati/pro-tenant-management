@@ -16,7 +16,7 @@ import { UploadInvoicesDialog } from "@/components/invoice-upload-review";
 import { Button } from "@/components/ui/button";
 import { Slash } from "@/components/ui/slash";
 import { StatusChip, apartmentStatusTone, apartmentStatusLabel } from "@/components/status-chip";
-import { formatEUR, formatRON } from "@/lib/format";
+import { formatEUR, formatRON, dateFormatter } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 function monthKey(d: Date) {
@@ -63,6 +63,13 @@ export default function OwnerDashboardPage() {
       months.push({ key, label: monthLabelFormatter.format(d), total: byMonth.get(key) ?? 0 });
     }
     return months;
+  }, [invoices]);
+
+  const outstandingThisMonth = useMemo(() => {
+    const key = monthKey(new Date());
+    return (invoices?.data ?? [])
+      .filter((inv) => inv.periodMonth.slice(0, 7) === key && inv.status !== "PAID")
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   }, [invoices]);
 
   const currentMonthTotal = monthlyIncome[monthlyIncome.length - 1]?.total ?? 0;
@@ -112,7 +119,7 @@ export default function OwnerDashboardPage() {
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-[16px] border border-border bg-card p-5 shadow-sm">
+        <div className="flex flex-col rounded-[16px] border border-border bg-card p-5 shadow-sm">
           <div className="mb-1 flex items-baseline justify-between">
             <h3 className="flex items-center gap-2 font-heading text-[16px] font-semibold">
               <Slash />
@@ -138,6 +145,47 @@ export default function OwnerDashboardPage() {
                 <span className="text-[9.5px] text-muted-foreground">{m.label}</span>
               </div>
             ))}
+          </div>
+
+          <div className="mt-5 flex flex-1 flex-col border-t border-divider pt-4">
+            <h4 className="mb-2.5 text-[11px] font-semibold tracking-[1px] text-muted-foreground uppercase">
+              Outstanding this month
+            </h4>
+            {outstandingThisMonth.length > 0 ? (
+              <div className="flex flex-col divide-y divide-divider overflow-y-auto">
+                {outstandingThisMonth.map((inv) => {
+                  const overdue = new Date(inv.dueDate).getTime() < Date.now();
+                  return (
+                    <Link
+                      key={inv.id}
+                      href={`/owner/apartments/${inv.apartmentId}`}
+                      className="flex items-center justify-between gap-3 py-2 text-[12.5px] hover:text-primary"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">
+                          {inv.apartment?.currentLease?.tenant
+                            ? `${inv.apartment.currentLease.tenant.firstName} ${inv.apartment.currentLease.tenant.lastName}`
+                            : (inv.apartment?.name ?? "—")}
+                        </div>
+                        <div className="truncate text-[11px] text-muted-foreground">{inv.apartment?.name}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="font-mono-tabular font-mono font-semibold text-destructive">
+                          {formatRON(inv.outstandingAmountRON)}
+                        </div>
+                        <div className={cn("font-mono text-[10.5px]", overdue ? "text-destructive" : "text-muted-foreground")}>
+                          due {dateFormatter.format(new Date(inv.dueDate))}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-[12.5px] text-muted-foreground">
+                Everyone&rsquo;s paid up this month.
+              </div>
+            )}
           </div>
         </div>
 
