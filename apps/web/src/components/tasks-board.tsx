@@ -549,7 +549,7 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
   return (
     <>
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {task.urgent && (
@@ -574,7 +574,10 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
                 {task.assignedToRole === "ADMIN" ? "PM" : "Owner"}
                 {waitingOnMe ? " (you)" : ""}
               </span>
-              {task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
+              {/* Only whoever currently holds the task can hand it to the other party —
+                  otherwise an owner could see "Send to Owner" on a task still sitting with
+                  the PM, which makes no sense from either side. */}
+              {waitingOnMe && task.status !== "COMPLETED" && task.status !== "CANCELLED" && (
                 <Button type="button" size="sm" variant="outline" onClick={handleReassign} disabled={update.isPending}>
                   {task.assignedToRole === "ADMIN" ? "Send to Owner" : "Send to PM"}
                 </Button>
@@ -608,7 +611,7 @@ function TaskDetailDialog({ task: initialTask, onClose }: { task: Task; onClose:
             )}
           </div>
 
-          {task.apartmentId && (
+          {task.apartmentId && user?.role === "ADMIN" && (
             <div className="flex flex-col gap-1.5">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowMaintenanceDialog(true)}>
                 Create maintenance task
