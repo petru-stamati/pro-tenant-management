@@ -53,17 +53,12 @@ function ExchangeRateWidget() {
   const { data: rate, isLoading, isError } = useLatestExchangeRate();
   if (isLoading || isError || !rate) return null;
   return (
-    <div className="rounded-[9px] bg-[#151916] px-3 py-2.5">
-      <div className="text-[10px] font-medium tracking-[1px] text-[#7a8076] uppercase">BNR rate</div>
-      <div className="mt-0.5 flex items-baseline gap-1.5">
-        <span className="font-mono-tabular font-mono text-[15px] font-semibold text-white">
-          {Number(rate.rateRON).toFixed(4)}
-        </span>
-        <span className="text-[11px] text-[#7a8076]">RON/EUR</span>
-      </div>
-      <div className="mt-0.5 text-[10.5px] text-[#7a8076]">
-        {new Date(rate.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
-      </div>
+    <div className="flex items-center justify-between gap-2 rounded-[9px] bg-[#151916] px-3 py-1.5">
+      <span className="text-[9.5px] font-medium tracking-[1px] text-[#7a8076] uppercase">BNR</span>
+      <span className="font-mono-tabular font-mono text-[12.5px] font-semibold text-white">
+        {Number(rate.rateRON).toFixed(4)} <span className="text-[10px] font-normal text-[#7a8076]">RON/EUR</span>
+      </span>
+      <span className="text-[10px] text-[#7a8076]">{new Date(rate.date).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
     </div>
   );
 }
@@ -363,7 +358,7 @@ function AppShellInner({ role, children }: { role: Role; children: React.ReactNo
   const initials = `${user.firstName[0] ?? ""}${user.lastName[0] ?? ""}`.toUpperCase();
 
   const sidebarBody = (
-    <div className="relative flex h-full flex-col overflow-hidden px-4 pb-4 pt-6">
+    <div className="relative flex h-full flex-col overflow-hidden px-4 pb-3 pt-5">
       <span
         aria-hidden="true"
         className="pointer-events-none absolute right-[-30px] bottom-[-60px] bg-primary opacity-[.16]"
@@ -374,7 +369,7 @@ function AppShellInner({ role, children }: { role: Role; children: React.ReactNo
         className="pointer-events-none absolute right-[52px] bottom-[-60px] bg-white opacity-[.04]"
         style={{ width: 70, height: 420, transform: "skewX(-16deg)" }}
       />
-      <div className="relative mb-4 flex items-center justify-between">
+      <div className="relative mb-3 flex items-center justify-between">
         <Logo />
         <button
           onClick={() => setNavOpen(false)}
@@ -401,7 +396,7 @@ function AppShellInner({ role, children }: { role: Role; children: React.ReactNo
       <nav className="relative flex flex-1 flex-col overflow-y-auto">
         {groups.map((g) => (
           <div key={g.label} className="flex flex-col gap-0.5">
-            <div className="px-3 pb-1.5 pt-4 text-[10px] font-semibold tracking-[1.4px] text-[#5b6159]">{g.label}</div>
+            <div className="px-3 pb-1 pt-3 text-[10px] font-semibold tracking-[1.4px] text-[#5b6159]">{g.label}</div>
             {g.items.map((item) => {
               const active = pathname === item.href || pathname.startsWith(item.href + "/");
               const Icon = item.icon;
@@ -410,7 +405,7 @@ function AppShellInner({ role, children }: { role: Role; children: React.ReactNo
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "relative flex h-9 items-center gap-3 rounded-[10px] px-3 text-[13.5px] font-medium transition-colors",
+                    "relative flex h-8 items-center gap-3 rounded-[10px] px-3 text-[13px] font-medium transition-colors",
                     active ? "bg-gradient-to-r from-primary/22 to-primary/[.04] text-white font-semibold" : "text-[#a9aea6] hover:bg-[#151916] hover:text-white",
                   )}
                 >
@@ -434,22 +429,22 @@ function AppShellInner({ role, children }: { role: Role; children: React.ReactNo
 
       <div className="relative mt-auto flex flex-col gap-2 pt-2">
         <ExchangeRateWidget />
-        <div className="flex items-center gap-2.5 rounded-xl bg-[#151916] px-3 py-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary font-heading text-[12px] font-semibold text-white">
+        <div className="flex items-center gap-2 rounded-xl bg-[#151916] px-2.5 py-2">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary font-heading text-[10px] font-semibold text-white">
             {initials}
           </div>
           <div className="min-w-0 flex-1 leading-tight">
-            <div className="truncate text-[13px] font-semibold text-white">
+            <div className="truncate text-[12px] font-semibold text-white">
               {user.firstName} {user.lastName}
             </div>
-            <div className="truncate text-[11.5px] text-[#7a8076]">{roleLabel}</div>
+            <div className="truncate text-[10.5px] text-[#7a8076]">{roleLabel}</div>
           </div>
           <button
             onClick={() => logout().then(() => router.push("/login"))}
             aria-label="Sign out"
             className="rounded-md p-1 text-[#6b7169] hover:text-white"
           >
-            <LogOutIcon className="h-[15px] w-[15px]" />
+            <LogOutIcon className="h-[14px] w-[14px]" />
           </button>
         </div>
       </div>
