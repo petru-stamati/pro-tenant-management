@@ -91,8 +91,9 @@ export class AnalyticsService {
     };
   }
 
-  async adminSummary(user: AuthenticatedUser) {
+  async adminSummary(user: AuthenticatedUser, ownerId?: string) {
     if (user.roleKey !== 'ADMIN') throw new ForbiddenException();
+    const ownerFilter = ownerId ? { ownerId } : {};
 
     const [
       totalApartments,
@@ -105,29 +106,31 @@ export class AnalyticsService {
       openMaintenance,
       revenueByOwner,
     ] = await Promise.all([
-      this.prisma.client.apartment.count(),
-      this.prisma.client.apartment.count({ where: { status: 'OCCUPIED' } }),
-      this.prisma.client.lease.findMany({ where: { status: 'ACTIVE' }, select: { rentAmountEUR: true } }),
+      this.prisma.client.apartment.count({ where: ownerFilter }),
+      this.prisma.client.apartment.count({ where: { ...ownerFilter, status: 'OCCUPIED' } }),
+      this.prisma.client.lease.findMany({ where: { ...ownerFilter, status: 'ACTIVE' }, select: { rentAmountEUR: true } }),
       this.prisma.client.rentPayment.aggregate({
-        where: { status: { in: ['UNPAID', 'PARTIALLY_PAID', 'LATE'] } },
+        where: { ...ownerFilter, status: { in: ['UNPAID', 'PARTIALLY_PAID', 'LATE'] } },
         _sum: { outstandingAmountEUR: true },
       }),
       this.prisma.client.apartmentInvoice.aggregate({
-        where: { status: { in: ['UNPAID', 'PARTIALLY_PAID'] } },
+        where: { ...ownerFilter, status: { in: ['UNPAID', 'PARTIALLY_PAID'] } },
         _sum: { outstandingAmountRON: true },
       }),
       this.prisma.client.paymentConfirmation.aggregate({
-        where: { paymentDate: this.currentMonthRange() },
+        where: { ...ownerFilter, paymentDate: this.currentMonthRange() },
         _sum: { totalAmountRON: true },
       }),
       this.prisma.client.apartmentInvoice.aggregate({
-        where: { periodMonth: this.currentMonthRange() },
+        where: { ...ownerFilter, periodMonth: this.currentMonthRange() },
         _sum: { totalAmountRON: true },
       }),
-      this.prisma.client.maintenanceRequest.count({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] } } }),
+      this.prisma.client.maintenanceRequest.count({
+        where: { ...ownerFilter, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+      }),
       this.prisma.client.lease.groupBy({
         by: ['ownerId'],
-        where: { status: 'ACTIVE' },
+        where: { ...ownerFilter, status: 'ACTIVE' },
         _sum: { rentAmountEUR: true },
       }),
     ]);

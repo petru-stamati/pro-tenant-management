@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useScope } from "@/lib/scope-context";
 import { useAdminSummary, useLeaseExpirations } from "@/hooks/use-analytics";
 import { useNotifications } from "@/hooks/use-notifications";
 import { NeedsAttentionPanel } from "@/components/needs-attention-panel";
@@ -44,8 +45,9 @@ function KpiCell({ label, children, onClick, tint }: { label: string; children: 
 
 export default function PmDashboardPage() {
   const { user } = useAuth();
-  const { data: summary, isLoading: summaryLoading } = useAdminSummary();
-  const { data: expirations, isLoading: expirationsLoading } = useLeaseExpirations(90);
+  const scope = useScope();
+  const { data: summary, isLoading: summaryLoading } = useAdminSummary(scope?.ownerId ?? undefined);
+  const { data: expirations, isLoading: expirationsLoading } = useLeaseExpirations(90, scope?.ownerId ?? undefined);
   const { data: notifications } = useNotifications();
   const [registerPayment, setRegisterPayment] = useState(false);
   const [outstandingDrilldown, setOutstandingDrilldown] = useState(false);

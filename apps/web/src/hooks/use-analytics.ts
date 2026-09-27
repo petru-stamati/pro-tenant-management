@@ -37,10 +37,10 @@ export interface LeaseExpiration {
   owner: { id: string; companyName: string };
 }
 
-export function useAdminSummary() {
+export function useAdminSummary(ownerId?: string) {
   return useQuery({
-    queryKey: ["analytics", "admin-summary"],
-    queryFn: () => apiFetch<AdminSummary>("/analytics/admin/summary"),
+    queryKey: ["analytics", "admin-summary", ownerId],
+    queryFn: () => apiFetch<AdminSummary>(`/analytics/admin/summary${ownerId ? `?ownerId=${ownerId}` : ""}`),
   });
 }
 
@@ -52,9 +52,12 @@ export function useOwnerSummary(ownerId: string | undefined) {
   });
 }
 
-export function useLeaseExpirations(withinDays = 90) {
+export function useLeaseExpirations(withinDays = 90, ownerId?: string) {
   return useQuery({
-    queryKey: ["analytics", "lease-expirations", withinDays],
-    queryFn: () => apiFetch<LeaseExpiration[]>(`/analytics/lease-expirations?withinDays=${withinDays}`),
+    queryKey: ["analytics", "lease-expirations", withinDays, ownerId],
+    queryFn: () =>
+      apiFetch<LeaseExpiration[]>(
+        `/analytics/lease-expirations?withinDays=${withinDays}${ownerId ? `&ownerId=${ownerId}` : ""}`,
+      ),
   });
 }

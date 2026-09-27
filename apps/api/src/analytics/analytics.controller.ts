@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
-import { IsIn } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 import { AnalyticsService } from './analytics.service';
 import { LeaseExpirationsQueryDto } from './dto/lease-expirations.dto';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
@@ -9,6 +9,13 @@ import { AuthenticatedUser } from '../common/types/authenticated-user';
 class RevenueQueryDto {
   @IsIn(['month', 'owner'])
   groupBy: 'month' | 'owner' = 'month';
+}
+
+class AdminSummaryQueryDto {
+  /** The sidebar's context switcher — scopes every number to one owner instead of the whole portfolio. */
+  @IsOptional()
+  @IsString()
+  ownerId?: string;
 }
 
 @Controller('analytics')
@@ -23,8 +30,8 @@ export class AnalyticsController {
 
   @Get('admin/summary')
   @RequirePermission('analytics:read-global')
-  adminSummary(@CurrentUser() user: AuthenticatedUser) {
-    return this.analytics.adminSummary(user);
+  adminSummary(@CurrentUser() user: AuthenticatedUser, @Query() query: AdminSummaryQueryDto) {
+    return this.analytics.adminSummary(user, query.ownerId);
   }
 
   @Get('revenue')
